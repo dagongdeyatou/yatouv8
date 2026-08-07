@@ -23,11 +23,17 @@ def load_chrome_collector() -> Any:
     return module
 
 
-def collect(chrome_path: pathlib.Path, output: pathlib.Path, timeout: float) -> None:
+def collect(
+    chrome_path: pathlib.Path,
+    output: pathlib.Path,
+    timeout: float,
+    probe_path: pathlib.Path | None = None,
+) -> None:
     """Run one isolated Chrome target and persist its by-value oracle result."""
 
     chrome_tools = load_chrome_collector()
-    probe = pathlib.Path(__file__).with_name("probe.js").read_text(encoding="utf-8")
+    probe_path = probe_path or pathlib.Path(__file__).with_name("probe.js")
+    probe = probe_path.read_text(encoding="utf-8")
     stderr = output.with_suffix(".chrome.stderr.log")
     chrome = chrome_tools.ChromeProcess(chrome_path, "headless", stderr)
     client = None
@@ -75,9 +81,14 @@ def main() -> int:
         default=pathlib.Path(r"C:\Program Files\Google\Chrome\Application\chrome.exe"),
     )
     parser.add_argument("--output", required=True, type=pathlib.Path)
+    parser.add_argument(
+        "--probe",
+        type=pathlib.Path,
+        help="JavaScript expression to evaluate (defaults to probe.js)",
+    )
     parser.add_argument("--timeout", type=float, default=20.0)
     arguments = parser.parse_args()
-    collect(arguments.chrome, arguments.output, arguments.timeout)
+    collect(arguments.chrome, arguments.output, arguments.timeout, arguments.probe)
     return 0
 
 

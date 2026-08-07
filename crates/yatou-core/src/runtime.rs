@@ -18,6 +18,8 @@ use yatou_schema::{
 
 use crate::{Resource, ResourceError, TraceRecorder, TraceRuntimeError};
 
+mod trusted_types;
+
 static INITIALIZE_V8: Once = Once::new();
 
 /// Errors produced by the V8 evaluator or browser host bootstrap.
@@ -421,6 +423,7 @@ fn install_native_functions(
     {
         return Err(V8Error::NativeInstallation("performance"));
     }
+    trusted_types::install(scope, context)?;
     Ok(())
 }
 

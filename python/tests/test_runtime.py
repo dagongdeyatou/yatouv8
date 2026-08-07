@@ -48,6 +48,81 @@ class RuntimeTests(unittest.TestCase):
                 runtime.eval("throw new TypeError('expected')")
             self.assertEqual(runtime.eval("6 * 7"), 42)
 
+    def test_trusted_types_chrome150_contract(self) -> None:
+        with yatouv8.Runtime() as runtime:
+            result = runtime.eval(
+                """
+                (() => {
+                    const descriptor = Object.getOwnPropertyDescriptor(
+                        globalThis,
+                        "trustedTypes",
+                    );
+                    const policy = trustedTypes.createPolicy("python-regression", {
+                        createHTML: value => `H:${value}`,
+                        createScript: value => `S:${value}`,
+                        createScriptURL: value => `U:${value}`,
+                    });
+                    const script = policy.createScript("x");
+                    let constructorError = null;
+                    try {
+                        new TrustedScript();
+                    } catch (error) {
+                        constructorError = `${error.name}: ${error.message}`;
+                    }
+                    return {
+                        factoryTag: Object.prototype.toString.call(trustedTypes),
+                        policyTag: Object.prototype.toString.call(policy),
+                        scriptTag: Object.prototype.toString.call(script),
+                        scriptValue: String(script),
+                        scriptJSON: JSON.stringify(script),
+                        scriptName: policy.createScript.name,
+                        scriptLength: policy.createScript.length,
+                        scriptNative: Function.prototype.toString
+                            .call(policy.createScript)
+                            .includes("[native code]"),
+                        isScript: trustedTypes.isScript(script),
+                        isStringScript: trustedTypes.isScript("S:x"),
+                        globalEnumerable: descriptor.enumerable,
+                        globalAccessor: typeof descriptor.get === "function",
+                        constructorError,
+                    };
+                })()
+                """
+            )
+            self.assertEqual(
+                result,
+                {
+                    "factoryTag": "[object TrustedTypePolicyFactory]",
+                    "policyTag": "[object TrustedTypePolicy]",
+                    "scriptTag": "[object TrustedScript]",
+                    "scriptValue": "S:x",
+                    "scriptJSON": '"S:x"',
+                    "scriptName": "createScript",
+                    "scriptLength": 1,
+                    "scriptNative": True,
+                    "isScript": True,
+                    "isStringScript": False,
+                    "globalEnumerable": True,
+                    "globalAccessor": True,
+                    "constructorError": (
+                        "TypeError: Failed to construct 'TrustedScript': "
+                        "Illegal constructor"
+                    ),
+                },
+            )
+
+            calls = [
+                event["entry"]["member"]
+                for event in runtime.trace["events"]
+                if event["level"] == "l1"
+                and event["entry"].get("target")
+                in {
+                    "TrustedTypePolicyFactory.prototype",
+                    "TrustedTypePolicy.prototype",
+                }
+            ]
+            self.assertEqual(calls, ["createPolicy", "createScript", "isScript", "isScript"])
+
     def test_concurrent_callers_are_serialized_on_owner_thread(self) -> None:
         with yatouv8.Runtime() as runtime:
             runtime.eval("globalThis.concurrentCounter=0")
