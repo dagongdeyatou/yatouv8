@@ -1,0 +1,13 @@
+yatouv8
+Copyright 2026 yatouv8 contributors
+
+This product is licensed under the Apache License, Version 2.0.
+
+The project studies independently licensed reference implementations and links
+to their exact revisions in docs/references.yaml. Reference source code is not
+vendored into the product tree. Any future copied or modified source must retain
+the notices required by its original license.
+
+The Windows wheel bundles zlib 1.2.13:
+Copyright (C) 1995-2022 Jean-loup Gailly and Mark Adler.
+zlib is distributed under the zlib License; see https://www.zlib.net/zlib_license.html.

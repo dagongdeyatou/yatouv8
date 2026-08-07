@@ -1,0 +1,13 @@
+# Changelog
+
+## 0.1.0 - 2026-08-07
+
+- Completed the evidence-driven M0–M10 architecture and conformance pipeline.
+- Added a V8 150 owner-thread runtime and persistent Python `Runtime`/`Context` API.
+- Added deterministic DOM, CSSOM, events, timers, storage, cookie, resource replay,
+  profile, clock, trace, and strict no-network-fallback host services.
+- Verified the bounded M8 host probe exactly against Chrome 150.
+- Verified the archived Google BotGuard M6 path and current public Google/
+  recaptcha.net loader paths with content-addressed evidence.
+- Added repaired CPython 3.13 Windows wheels, CI, SBOM, release audit, performance,
+  concurrency, exception-recovery, and cleanup gates.

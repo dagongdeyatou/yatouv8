@@ -1,0 +1,121 @@
+schema_version: 1
+checked_at: "2026-08-07"
+policy:
+  chrome_is_normative: true
+  vendored_reference_source: false
+  local_checkout_root: ".reference-cache"
+
+references:
+  - id: recaptcha_current_public_loader_google
+    url: "https://www.google.com/recaptcha/api.js?render=explicit"
+    captured_release: "w_Yb7dGGXaKesJ7BMiqFJqBG"
+    captured_sha256: "f71c4376f504e3b3d7d8e0a519a60507df2316e178136ee56564e2fddcf4754b"
+    captured_at: "2026-08-07"
+    role: "M9 current public Google reCAPTCHA loader"
+    normative: true
+
+  - id: recaptcha_current_public_loader_net
+    url: "https://www.recaptcha.net/recaptcha/api.js?render=explicit"
+    captured_release: "w_Yb7dGGXaKesJ7BMiqFJqBG"
+    captured_sha256: "349af3c9c79b4d92a77b76ff764fe176f25f391a3d772014fffcb3d7d5622b44"
+    captured_at: "2026-08-07"
+    role: "M9 current public recaptcha.net loader"
+    normative: true
+
+  - id: recaptcha_current_public_second_stage
+    url: "https://www.gstatic.com/recaptcha/releases/w_Yb7dGGXaKesJ7BMiqFJqBG/recaptcha__en.js"
+    captured_sha256: "6dba4114e36a52e724a9c2be4732b94d1973ef2ef91f0f71774b9e28f83f364f"
+    captured_at: "2026-08-07"
+    role: "M9 content-addressed current public second stage; execution is not an M10 claim"
+    normative: false
+
+  - id: inside_recaptcha
+    url: "https://github.com/neuroradiology/InsideReCaptcha"
+    commit: "5176f31a7dc87654bcf3e9fa98d62bd537bea32b"
+    model_sha256: "eb283e820750810020f120000c99008dcf8930d9ce9d8b881a01ff88157bb9ff"
+    bytecode_sha256: "f2f5fee92d9717e207fc88d4c9893370df86d23e78c47252fbf0f30422f086f0"
+    role: "M6 archived real Google reCAPTCHA BotGuard model and encrypted-bytecode fixture"
+    normative: false
+    note: "Chrome 150 execution of the artifact is normative; the archived repository text is not"
+
+  - id: iv8
+    url: "https://github.com/HanZzzzz000/iv8"
+    commit: "950c9b937a510bb4c33909723ad3596807a44546"
+    license: "Repository documentation; installed wheel reports Proprietary"
+    role: "Black-box behavior oracle and Python API reference"
+    normative: false
+    distribution: "Never include the proprietary wheel in yatouv8 artifacts"
+
+  - id: ming_iv8_rs
+    url: "https://github.com/lgnorant-lu/ming_iv8_rs"
+    commit: "75c5e55ba6b693d935be494fc79f46bcd81902ca"
+    license: "Apache-2.0"
+    role: "Rust/PyO3, browser-surface codegen, profile and harness reference"
+    normative: false
+    distribution: "Retain attribution for any selectively reused source"
+
+  - id: stpyv8
+    url: "https://github.com/cloudflare/stpyv8"
+    commit: "57e881c7fbe178c598262cb5da53d2bce1b41684"
+    license: "Apache-2.0"
+    role: "V8 embedding, Context/Isolate/Locker/Wrapper lifetime reference"
+    normative: false
+    distribution: "Do not adopt Boost.Python as the yatouv8 binding layer"
+
+  - id: rusty_v8
+    url: "https://github.com/denoland/rusty_v8"
+    commit: "5c15a6995c9bb4bacd3e341b59fff32c909c80bf"
+    tag: "v150.4.0"
+    crate: "v8"
+    crate_version: "150.4.0"
+    crate_checksum_sha256: "42a978ff11f15b24e5c05a7123cf2b68f41e763546699781a924ef4e2cf43a49"
+    license: "MIT"
+    role: "V8 150 Rust binding and crates.io source-build package"
+    normative: false
+
+  - id: chromium_icu
+    url: "https://chromium.googlesource.com/chromium/deps/icu"
+    commit: "ee5f27adc28bd3f15b2c293f726d14d2e336cbd5"
+    data_file: "common/icudtl.dat"
+    data_sha256: "1cf67874b5a87a8363a86fb3f81e3cbbed54d389062dab8fb52308d5cf8c8612"
+    license: "Unicode-3.0 and ICU licenses"
+    role: "Pinned desktop ICU data omitted from the crates.io v8 source package"
+    normative: false
+
+  - id: chromium_third_party_rust
+    url: "https://chromium.googlesource.com/chromium/src/third_party/rust"
+    commit: "26e8ff47f18a8d28d6187a04b6a16cb7332356f8"
+    archive_sha256: "23326dc97cc82b2e0b551f823c8afb0a91524abcfe078c50d38dbdf37fe0eb92"
+    license: "Per-crate licenses recorded by Chromium"
+    role: "Pinned Chromium Rust vendor sources omitted from the crates.io v8 source package"
+    normative: false
+
+  - id: chromium_libclang
+    url: "https://commondatastorage.googleapis.com/chromium-browser-clang/Win/libclang-llvmorg-23-init-10931-g20b6ec66-11.tar.xz"
+    package_version: "llvmorg-23-init-10931-g20b6ec66-11"
+    archive_sha256: "ed2dde0e28c10605eee91904168556d3ff33364b9df1b92ee6c25ec7b62ee8f5"
+    dll_sha256: "4183c395fd0f28497244fe1cafdc5aafc6ae99e443ea5cee0f61a53462ee4e97"
+    license: "Apache-2.0 WITH LLVM-exception"
+    role: "Pinned libclang matching the Chromium Clang used by V8 150 binding generation"
+    normative: false
+
+  - id: chromium_gn
+    url: "https://chrome-infra-packages.appspot.com/dl/gn/gn/windows-amd64/+/git_revision:3357c4f51b1a9e676378c695dd9c7e9911c35ee6"
+    git_revision: "3357c4f51b1a9e676378c695dd9c7e9911c35ee6"
+    archive_sha256: "77e77e2f0d7bea1992769343c68ab4312b8151c5a433f30301b365dd8e0f8687"
+    role: "Pinned GN executable used by the V8 150 source build"
+    normative: false
+
+  - id: chromium_ninja
+    url: "https://chrome-infra-packages.appspot.com/dl/infra/3pp/tools/ninja/windows-amd64/+/version:3@1.12.1.chromium.4"
+    version: "3@1.12.1.chromium.4"
+    archive_sha256: "0cf1cb1b9d2b8d2d14a9fd38b984f17dd853115db682880b21ceee45e91deb50"
+    role: "Pinned Ninja executable used by the V8 150 source build"
+    normative: false
+
+toolchain:
+  rust: "1.97.1"
+  rust_commit: "8bab26f4f68e0e26f0bb7960be334d5b520ea452"
+  target: "x86_64-pc-windows-msvc"
+  pyo3: "0.29.2"
+  maturin: "1.14.1"

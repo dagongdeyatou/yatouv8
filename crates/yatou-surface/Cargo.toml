@@ -1,0 +1,20 @@
+[package]
+name = "yatou-surface"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[dependencies]
+serde.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true
+yatou-core = { path = "../yatou-core" }
+yatou-schema = { path = "../yatou-schema" }
+
+[[example]]
+name = "validate_manifest"
+
+[lints]
+workspace = true

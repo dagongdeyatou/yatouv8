@@ -1,0 +1,25 @@
+[build-system]
+requires = ["maturin==1.14.1"]
+build-backend = "maturin"
+
+[project]
+name = "yatouv8"
+version = "0.1.0"
+description = "Evidence-driven Chrome-conformant V8 host"
+readme = "README.md"
+requires-python = ">=3.13"
+license = "Apache-2.0"
+authors = [{ name = "yatouv8 contributors" }]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "License :: OSI Approved :: Apache Software License",
+    "Operating System :: Microsoft :: Windows :: Windows 11",
+    "Programming Language :: Python :: 3.13",
+    "Programming Language :: Rust",
+]
+
+[tool.maturin]
+manifest-path = "crates/yatou-py/Cargo.toml"
+python-source = "python"
+module-name = "yatouv8._native"
+features = ["extension-module", "v8-runtime"]

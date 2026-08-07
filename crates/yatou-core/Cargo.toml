@@ -1,0 +1,49 @@
+[package]
+name = "yatou-core"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[features]
+default = []
+v8-runtime = ["dep:base64", "dep:v8"]
+
+[dependencies]
+base64 = { workspace = true, optional = true }
+serde.workspace = true
+serde_json.workspace = true
+sha2.workspace = true
+thiserror.workspace = true
+v8 = { workspace = true, optional = true }
+yatou-schema = { path = "../yatou-schema" }
+
+[[example]]
+name = "v8_smoke"
+required-features = ["v8-runtime"]
+
+[[example]]
+name = "botguard_m6"
+required-features = ["v8-runtime"]
+
+[[example]]
+name = "trace_spine"
+
+[[example]]
+name = "replay_trace"
+
+[[example]]
+name = "m8_conformance"
+required-features = ["v8-runtime"]
+
+[[example]]
+name = "session_runner"
+required-features = ["v8-runtime"]
+
+[[example]]
+name = "m10_quality"
+required-features = ["v8-runtime"]
+
+[lints]
+workspace = true

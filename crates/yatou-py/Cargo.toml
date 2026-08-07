@@ -1,0 +1,24 @@
+[package]
+name = "yatou-py"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[lib]
+name = "_native"
+crate-type = ["cdylib", "rlib"]
+
+[features]
+default = []
+extension-module = ["pyo3/extension-module"]
+v8-runtime = ["yatou-core/v8-runtime"]
+
+[dependencies]
+pyo3.workspace = true
+serde_json.workspace = true
+yatou-core = { path = "../yatou-core" }
+
+[lints]
+workspace = true

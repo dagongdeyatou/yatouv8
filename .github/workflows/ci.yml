@@ -1,0 +1,44 @@
+name: ci
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  contracts:
+    runs-on: windows-2025
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@1.97.1
+        with:
+          components: rustfmt, clippy
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+      - run: python -m pip install -r tools/chrome-collector/requirements.txt
+      - shell: pwsh
+        run: ./scripts/check.ps1
+
+  windows-v8-wheel:
+    runs-on: windows-2025
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@1.97.1
+        with:
+          components: rustfmt, clippy
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+      - run: python -m pip install maturin==1.14.1 websocket-client==1.9.0
+      - shell: pwsh
+        run: ./scripts/build-wheel.ps1
+      - uses: actions/upload-artifact@v4
+        with:
+          name: yatouv8-win-amd64-cp313
+          path: dist/*.whl
+          if-no-files-found: error
