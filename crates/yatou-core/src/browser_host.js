@@ -6,6 +6,9 @@
   const numberValue = Number;
   const ObjectIntrinsic = Object;
   const ReflectIntrinsic = Reflect;
+  const reflectGetPrototypeOfIntrinsic = Reflect.getPrototypeOf;
+  const reflectOwnKeysIntrinsic = Reflect.ownKeys;
+  const reflectGetOwnPropertyDescriptorIntrinsic = Reflect.getOwnPropertyDescriptor;
   const ArrayIntrinsic = Array;
   const PromiseIntrinsic = Promise;
   const DateIntrinsic = Date;
@@ -17,6 +20,7 @@
   const ArrayBufferIntrinsic = ArrayBuffer;
   const Uint8ArrayIntrinsic = Uint8Array;
   const ProxyIntrinsic = Proxy;
+  const FunctionIntrinsic = Function;
   const MathIntrinsic = Math;
   const JSONIntrinsic = JSON;
   const TypeErrorIntrinsic = TypeError;
@@ -32,7 +36,10 @@
   const resources = new MapIntrinsic();
   let requestSequence = 0;
   let timerSequence = 0;
-  let clockMs = profile.clock.start_ms;
+  const clockStartMs = profile.clock.mode === "recorded"
+    ? numberValue(profile.clock.buckets && profile.clock.buckets[0] && profile.clock.buckets[0].value_ms)
+    : numberValue(profile.clock.start_ms);
+  let clockMs = clockStartMs;
   const timers = new MapIntrinsic();
   const microtasks = [];
 
@@ -43,10 +50,12 @@
   const traceTargets = new WeakMapIntrinsic();
   const traceProxyCache = new WeakMapIntrinsic();
   const traceRawValues = new WeakMapIntrinsic();
+  const reflectionFunctions = new WeakSetIntrinsic();
   let getTraceActive = false;
   let getTraceEvents = 0;
   let getTraceDropped = 0;
   let getTraceDepth = 0;
+  let normalizeOwnKeys = (_target, keys) => keys;
 
   const objectLike = value =>
     (typeof value === "object" && value !== null) || typeof value === "function";
@@ -57,7 +66,7 @@
   const rawTraceValue = value => traceRawValues.get(value) || value;
   const semanticTraceTarget = value => {
     value = rawTraceValue(value);
-    for (let current = value; objectLike(current); current = ReflectIntrinsic.getPrototypeOf(current)) {
+    for (let current = value; objectLike(current); current = reflectGetPrototypeOfIntrinsic(current)) {
       const target = traceTargets.get(current);
       if (target) return target;
     }
@@ -66,7 +75,7 @@
   const ownerTraceTarget = (value, key) => {
     value = rawTraceValue(value);
     const fallback = semanticTraceTarget(value) || "Object";
-    for (let current = value; objectLike(current); current = ReflectIntrinsic.getPrototypeOf(current)) {
+    for (let current = value; objectLike(current); current = reflectGetPrototypeOfIntrinsic(current)) {
       if (!ObjectIntrinsic.prototype.hasOwnProperty.call(current, key)) continue;
       return traceTargets.get(current) || fallback;
     }
@@ -97,6 +106,20 @@
       getTraceDepth -= 1;
     }
   };
+  const logStructural = (target, member, operation, outcome, args = [], threw = false) => {
+    if (!getTraceConfig.enabled || !getTraceActive || getTraceDepth) return;
+    if (getTraceEvents >= getTraceConfig.maxEvents) {
+      getTraceDropped += 1;
+      return;
+    }
+    getTraceDepth += 1;
+    try {
+      getTraceEvents += 1;
+      logApi(target, stringValue(member), operation, args, outcome, threw);
+    } finally {
+      getTraceDepth -= 1;
+    }
+  };
   const observeTraceValue = (value, hint = null) => {
     value = rawTraceValue(value);
     if (!getTraceConfig.enabled || !traceableValue(value, hint)) return value;
@@ -115,7 +138,7 @@
             getTraceDepth -= 1;
           }
           if (traceableKey(key)) logGet(owner, key, result);
-          const descriptor = ReflectIntrinsic.getOwnPropertyDescriptor(target, key);
+          const descriptor = reflectGetOwnPropertyDescriptorIntrinsic(target, key);
           const invariantValue = descriptor
             && !descriptor.configurable
             && ObjectIntrinsic.prototype.hasOwnProperty.call(descriptor, "value")
@@ -140,7 +163,8 @@
       },
       apply(target, thisArg, argumentsList) {
         const callbackBoundary = semanticTraceTarget(target) === "EventTarget.prototype.dispatchEvent";
-        if (!callbackBoundary) getTraceDepth += 1;
+        const structuralBoundary = reflectionFunctions.has(target);
+        if (!callbackBoundary && !structuralBoundary) getTraceDepth += 1;
         let result;
         try {
           result = ReflectIntrinsic.apply(
@@ -149,9 +173,9 @@
             argumentsList.map(rawTraceValue)
           );
         } finally {
-          if (!callbackBoundary) getTraceDepth -= 1;
+          if (!callbackBoundary && !structuralBoundary) getTraceDepth -= 1;
         }
-        return observeTraceValue(result);
+        return structuralBoundary ? result : observeTraceValue(result);
       },
       construct(target, argumentsList, newTarget) {
         getTraceDepth += 1;
@@ -166,6 +190,47 @@
           getTraceDepth -= 1;
         }
         return observeTraceValue(result);
+      },
+      ownKeys(target) {
+        let result;
+        getTraceDepth += 1;
+        try { result = normalizeOwnKeys(target, reflectOwnKeysIntrinsic(target)); }
+        finally { getTraceDepth -= 1; }
+        const owner = semanticTraceTarget(target) || "Object";
+        for (const key of result) logStructural(owner, key, "own_keys", key);
+        return result;
+      },
+      getOwnPropertyDescriptor(target, key) {
+        let result;
+        getTraceDepth += 1;
+        try { result = reflectGetOwnPropertyDescriptorIntrinsic(target, key); }
+        finally { getTraceDepth -= 1; }
+        logStructural(semanticTraceTarget(target) || "Object", key, "get_own_property_descriptor", result);
+        return result;
+      },
+      getPrototypeOf(target) {
+        let result;
+        getTraceDepth += 1;
+        try { result = reflectGetPrototypeOfIntrinsic(target); }
+        finally { getTraceDepth -= 1; }
+        logStructural(semanticTraceTarget(target) || "Object", "[[Prototype]]", "get_prototype_of", result);
+        return result;
+      },
+      has(target, key) {
+        let result;
+        getTraceDepth += 1;
+        try { result = ReflectIntrinsic.has(target, key); }
+        finally { getTraceDepth -= 1; }
+        logStructural(semanticTraceTarget(target) || "Object", key, "has", result);
+        return result;
+      },
+      defineProperty(target, key, descriptor) {
+        let result;
+        getTraceDepth += 1;
+        try { result = ReflectIntrinsic.defineProperty(target, key, descriptor); }
+        finally { getTraceDepth -= 1; }
+        logStructural(semanticTraceTarget(target) || "Object", key, "define_property", result, [descriptor]);
+        return result;
       }
     };
     const proxy = new ProxyIntrinsic(value, handler);
@@ -230,6 +295,80 @@
       threw
     });
 
+  const reflectionTarget = value => semanticTraceTarget(rawTraceValue(value)) ||
+    (value === globalObject ? "globalThis" : ObjectIntrinsic.prototype.toString.call(rawTraceValue(value)).slice(8, -1));
+  const installReflectionTracing = () => {
+    const replace = (owner, name, operation, implementation) => {
+      const original = owner[name];
+      if (typeof original !== "function") return;
+      const wrapped = function (...args) {
+        return implementation(original, this, args);
+      };
+      ObjectIntrinsic.defineProperty(wrapped, "name", { value: name, configurable: true });
+      ObjectIntrinsic.defineProperty(wrapped, "length", { value: original.length, configurable: true });
+      markNative(wrapped, { name, length: original.length, native_like: true });
+      reflectionFunctions.add(wrapped);
+      ObjectIntrinsic.defineProperty(owner, name, {
+        ...ObjectIntrinsic.getOwnPropertyDescriptor(owner, name),
+        value: wrapped
+      });
+    };
+    const invoke = (original, receiver, args) => {
+      getTraceDepth += 1;
+      try { return ReflectIntrinsic.apply(original, receiver, args.map(rawTraceValue)); }
+      finally { getTraceDepth -= 1; }
+    };
+    const ownKeys = (original, receiver, args) => {
+      const target = rawTraceValue(args[0]);
+      const result = normalizeOwnKeys(target, invoke(original, receiver, [target]));
+      if (!getTraceActive) return result;
+      const name = reflectionTarget(target);
+      for (const key of result) logStructural(name, key, "own_keys", key);
+      return result;
+    };
+    const descriptor = (original, receiver, args) => {
+      const target = rawTraceValue(args[0]);
+      const key = args[1];
+      const result = invoke(original, receiver, [target, key]);
+      if (!getTraceActive) return result;
+      logStructural(reflectionTarget(target), key, "get_own_property_descriptor", result);
+      return result;
+    };
+    const descriptors = (original, receiver, args) => {
+      const target = rawTraceValue(args[0]);
+      const result = invoke(original, receiver, [target]);
+      if (!getTraceActive) return result;
+      const name = reflectionTarget(target);
+      for (const key of ReflectIntrinsic.ownKeys(result))
+        logStructural(name, key, "get_own_property_descriptor", result[key]);
+      return result;
+    };
+    const prototype = (original, receiver, args) => {
+      const target = rawTraceValue(args[0]);
+      const result = invoke(original, receiver, [target]);
+      if (!getTraceActive) return result;
+      logStructural(reflectionTarget(target), "[[Prototype]]", "get_prototype_of", result);
+      return result;
+    };
+    const has = (original, receiver, args) => {
+      const target = rawTraceValue(args[0]);
+      const result = invoke(original, receiver, [target, args[1]]);
+      if (!getTraceActive) return result;
+      logStructural(reflectionTarget(target), args[1], "has", result);
+      return result;
+    };
+    replace(ObjectIntrinsic, "getOwnPropertyNames", "own_keys", ownKeys);
+    replace(ObjectIntrinsic, "getOwnPropertySymbols", "own_keys", ownKeys);
+    replace(ObjectIntrinsic, "keys", "own_keys", ownKeys);
+    replace(ReflectIntrinsic, "ownKeys", "own_keys", ownKeys);
+    replace(ObjectIntrinsic, "getOwnPropertyDescriptor", "get_own_property_descriptor", descriptor);
+    replace(ReflectIntrinsic, "getOwnPropertyDescriptor", "get_own_property_descriptor", descriptor);
+    replace(ObjectIntrinsic, "getOwnPropertyDescriptors", "get_own_property_descriptor", descriptors);
+    replace(ObjectIntrinsic, "getPrototypeOf", "get_prototype_of", prototype);
+    replace(ReflectIntrinsic, "getPrototypeOf", "get_prototype_of", prototype);
+    replace(ReflectIntrinsic, "has", "has", has);
+  };
+
   data(globalObject, "__yatouTakeHostLog", () => hostLog.splice(0), false);
   data(globalObject, "__yatouSetGetTraceActive", active => {
     getTraceActive = getTraceConfig.enabled && booleanValue(active);
@@ -271,7 +410,7 @@
       this.currentTarget = null;
       this.eventPhase = 0;
       this.isTrusted = false;
-      this.timeStamp = clockMs;
+      this.timeStamp = performance.now();
       this._stopped = false;
       this._immediateStopped = false;
     }
@@ -301,24 +440,33 @@
     }
   }
 
+  const eventTargetState = new WeakMapIntrinsic();
+  const listenersFor = target => {
+    let listeners = eventTargetState.get(target);
+    if (!listeners) { listeners = new MapIntrinsic(); eventTargetState.set(target, listeners); }
+    return listeners;
+  };
+
   class EventTarget {
-    constructor() { this._listeners = new MapIntrinsic(); }
+    constructor() { listenersFor(this); }
     addEventListener(type, callback, options = false) {
       type = stringValue(type);
       logApi("EventTarget.prototype", "addEventListener", "call", [type, callback, options], undefined);
       if (callback == null) return;
-      const entries = this._listeners.get(type) || [];
+      const listeners = listenersFor(this);
+      const entries = listeners.get(type) || [];
       const capture = typeof options === "object" ? booleanValue(options.capture) : booleanValue(options);
       if (!entries.some(entry => entry.callback === callback && entry.capture === capture))
         entries.push({ callback, capture, once: booleanValue(options && options.once) });
-      this._listeners.set(type, entries);
+      listeners.set(type, entries);
     }
     removeEventListener(type, callback, options = false) {
       type = stringValue(type);
       logApi("EventTarget.prototype", "removeEventListener", "call", [type, callback, options], undefined);
       const capture = typeof options === "object" ? booleanValue(options.capture) : booleanValue(options);
-      const entries = this._listeners.get(type) || [];
-      this._listeners.set(type, entries.filter(entry => entry.callback !== callback || entry.capture !== capture));
+      const listeners = listenersFor(this);
+      const entries = listeners.get(type) || [];
+      listeners.set(type, entries.filter(entry => entry.callback !== callback || entry.capture !== capture));
     }
     dispatchEvent(event) {
       if (!(event instanceof Event)) throw new TypeErrorIntrinsic("parameter 1 is not of type 'Event'");
@@ -326,7 +474,7 @@
       if (!event.target) event.target = this;
       event.currentTarget = this;
       event.eventPhase = Event.AT_TARGET;
-      const entries = ArrayIntrinsic.from(this._listeners.get(event.type) || []);
+      const entries = ArrayIntrinsic.from(listenersFor(this).get(event.type) || []);
       for (const entry of entries) {
         if (entry.once) this.removeEventListener(event.type, entry.callback, { capture: entry.capture });
         if (typeof entry.callback === "function") entry.callback.call(this, event);
@@ -339,16 +487,27 @@
     }
   }
 
+  const nodeState = new WeakMapIntrinsic();
+  const nodeData = node => {
+    const state = nodeState.get(node);
+    if (!state) throw new TypeErrorIntrinsic("Illegal invocation");
+    return state;
+  };
+
   class Node extends EventTarget {
     constructor(nodeType, nodeName, ownerDocument = null) {
       super();
-      this.nodeType = nodeType;
-      this.nodeName = nodeName;
-      this.ownerDocument = ownerDocument;
-      this.parentNode = null;
-      this.childNodes = [];
-      this._text = "";
+      nodeState.set(this, { nodeType, nodeName, ownerDocument, parentNode: null, childNodes: [], text: "" });
     }
+    get nodeType() { return nodeData(this).nodeType; }
+    get nodeName() { return nodeData(this).nodeName; }
+    get ownerDocument() { return nodeData(this).ownerDocument; }
+    get parentNode() { return nodeData(this).parentNode; }
+    get parentElement() { const parent = this.parentNode; return parent instanceof Element ? parent : null; }
+    get childNodes() { return nodeData(this).childNodes; }
+    get baseURI() { return this.ownerDocument ? this.ownerDocument.URL : config.url; }
+    get nodeValue() { return this.nodeType === Node.TEXT_NODE ? nodeData(this).text : null; }
+    set nodeValue(value) { if (this.nodeType === Node.TEXT_NODE) nodeData(this).text = stringValue(value ?? ""); }
     get firstChild() { return this.childNodes[0] || null; }
     get lastChild() { return this.childNodes[this.childNodes.length - 1] || null; }
     get previousSibling() {
@@ -374,7 +533,7 @@
       if (child === this) throw new ErrorIntrinsic("HierarchyRequestError");
       if (child.parentNode) child.parentNode.removeChild(child);
       this.childNodes.push(child);
-      child.parentNode = this;
+      nodeData(child).parentNode = this;
       return child;
     }
     insertBefore(child, reference) {
@@ -383,14 +542,14 @@
       if (index < 0) throw new ErrorIntrinsic("NotFoundError");
       if (child.parentNode) child.parentNode.removeChild(child);
       this.childNodes.splice(index, 0, child);
-      child.parentNode = this;
+      nodeData(child).parentNode = this;
       return child;
     }
     removeChild(child) {
       const index = this.childNodes.indexOf(child);
       if (index < 0) throw new ErrorIntrinsic("NotFoundError");
       this.childNodes.splice(index, 1);
-      child.parentNode = null;
+      nodeData(child).parentNode = null;
       return child;
     }
     replaceChild(next, previous) {
@@ -413,13 +572,13 @@
       return clone;
     }
     get textContent() {
-      if (this.nodeType === Node.TEXT_NODE) return this._text;
+      if (this.nodeType === Node.TEXT_NODE) return nodeData(this).text;
       return this.childNodes.map(child => child.textContent).join("");
     }
     set textContent(value) {
       this.childNodes.splice(0);
       const text = stringValue(value ?? "");
-      if (this.nodeType === Node.TEXT_NODE) this._text = text;
+      if (this.nodeType === Node.TEXT_NODE) nodeData(this).text = text;
       else if (text) this.appendChild(new Text(text, this.ownerDocument));
     }
   }
@@ -433,11 +592,11 @@
   class Text extends Node {
     constructor(dataValue = "", ownerDocument = null) {
       super(Node.TEXT_NODE, "#text", ownerDocument);
-      this._text = stringValue(dataValue);
+      nodeData(this).text = stringValue(dataValue);
     }
-    get data() { return this._text; }
-    set data(value) { this._text = stringValue(value); }
-    get length() { return this._text.length; }
+    get data() { return nodeData(this).text; }
+    set data(value) { nodeData(this).text = stringValue(value); }
+    get length() { return nodeData(this).text.length; }
   }
 
   class DocumentFragment extends Node {
@@ -555,19 +714,30 @@
     return all ? found : found[0] || null;
   };
 
+  const elementState = new WeakMapIntrinsic();
+  const elementData = value => elementState.get(value);
+
   class Element extends Node {
     constructor(tagName, ownerDocument = null) {
       const upper = stringValue(tagName).toUpperCase();
       super(Node.ELEMENT_NODE, upper, ownerDocument);
-      this.tagName = upper;
-      this.localName = upper.toLowerCase();
-      this.namespaceURI = "http://www.w3.org/1999/xhtml";
-      this.attributes = new MapIntrinsic();
-      this.style = styleProxy(new CSSStyleDeclaration());
-      this.classList = new DOMTokenList(this);
-      this.dataset = ObjectIntrinsic.create(null);
-      this.contentWindow = this.localName === "iframe" ? globalObject : null;
+      const state = {
+        tagName: upper, localName: upper.toLowerCase(), namespaceURI: "http://www.w3.org/1999/xhtml",
+        attributes: new MapIntrinsic(), style: styleProxy(new CSSStyleDeclaration()),
+        classList: null, dataset: ObjectIntrinsic.create(null), contentWindow: null
+      };
+      elementState.set(this, state);
+      state.classList = new DOMTokenList(this);
+      state.contentWindow = state.localName === "iframe" ? globalObject : null;
     }
+    get tagName() { return elementData(this).tagName; }
+    get localName() { return elementData(this).localName; }
+    get namespaceURI() { return elementData(this).namespaceURI; }
+    get attributes() { return elementData(this).attributes; }
+    get style() { return elementData(this).style; }
+    get classList() { return elementData(this).classList; }
+    get dataset() { return elementData(this).dataset; }
+    get contentWindow() { return elementData(this).contentWindow; }
     get children() { return this.childNodes.filter(child => child.nodeType === Node.ELEMENT_NODE); }
     get childElementCount() { return this.children.length; }
     get firstElementChild() { return this.children[0] || null; }
@@ -615,35 +785,131 @@
     }
     get clientWidth() { return this === document.documentElement ? config.viewport.width : 0; }
     get clientHeight() { return this === document.documentElement ? config.viewport.height : 0; }
+  }
+
+  class HTMLElement extends Element {}
+  class HTMLIFrameElement extends HTMLElement {
+    // These members live on HTMLIFrameElement in Chrome, not Element.  Keep
+    // them on the specialised prototype so generated Element descriptors can
+    // be made exact without removing iframe realm access.
+    get contentWindow() { return elementData(this).contentWindow; }
+    get contentDocument() { return this.ownerDocument; }
+  }
+  class HTMLCanvasElement extends HTMLElement {
     getContext() { return null; }
     toDataURL() { return "data:,"; }
   }
 
-  class HTMLElement extends Element {}
-  class HTMLIFrameElement extends HTMLElement {}
-  class HTMLCanvasElement extends HTMLElement {}
+  const cookieJar = new MapIntrinsic();
+  let activeLocation = null;
+  const cookieUrl = () => {
+    const href = activeLocation && activeLocation.href || config.url;
+    const match = stringValue(href).match(/^([a-zA-Z][\w+.-]*:)(?:\/\/([^\/?#]*))?([^?#]*)/);
+    const host = match && match[2] || "";
+    return {
+      secure: !!match && match[1].toLowerCase() === "https:",
+      hostname: host.replace(/:\d+$/, "").toLowerCase(),
+      pathname: match && match[3] || "/"
+    };
+  };
+  const defaultCookiePath = pathname => {
+    const index = pathname.lastIndexOf("/");
+    return index <= 0 ? "/" : pathname.slice(0, index);
+  };
+  const cookieKey = cookie => `${cookie.name}\u0000${cookie.domain}\u0000${cookie.path}`;
+  const normalizeCookie = input => {
+    const url = cookieUrl();
+    const cookie = {
+      name: stringValue(input.name || "").trim(),
+      value: stringValue(input.value ?? ""),
+      domain: stringValue(input.domain || url.hostname).replace(/^\./, "").toLowerCase(),
+      path: stringValue(input.path || defaultCookiePath(url.pathname)),
+      secure: booleanValue(input.secure),
+      httpOnly: booleanValue(input.httpOnly || input.http_only),
+      sameSite: stringValue(input.sameSite || input.same_site || "Lax"),
+      expires: input.expires == null ? null : numberValue(input.expires)
+    };
+    return cookie.name ? cookie : null;
+  };
+  const storeCookie = cookie => {
+    cookie = normalizeCookie(cookie);
+    if (!cookie) return;
+    const key = cookieKey(cookie);
+    if (cookie.expires !== null && cookie.expires <= config.time_origin_ms / 1000)
+      cookieJar.delete(key);
+    else cookieJar.set(key, cookie);
+  };
+  const visibleCookies = includeHttpOnly => {
+    const url = cookieUrl();
+    const nowSeconds = config.time_origin_ms / 1000;
+    return ArrayIntrinsic.from(cookieJar.values()).filter(cookie => {
+      if (cookie.expires !== null && cookie.expires <= nowSeconds) return false;
+      const domain = url.hostname === cookie.domain || url.hostname.endsWith(`.${cookie.domain}`);
+      const path = url.pathname.startsWith(cookie.path);
+      return domain && path && (!cookie.secure || url.secure) && (includeHttpOnly || !cookie.httpOnly);
+    });
+  };
+  const parseCookieAssignment = serialized => {
+    const parts = stringValue(serialized).split(";").map(part => part.trim());
+    const pair = parts.shift() || "";
+    const separator = pair.indexOf("=");
+    if (separator <= 0) return null;
+    const url = cookieUrl();
+    const cookie = {
+      name: pair.slice(0, separator).trim(), value: pair.slice(separator + 1).trim(),
+      domain: url.hostname, path: defaultCookiePath(url.pathname), secure: false,
+      httpOnly: false, sameSite: "Lax", expires: null
+    };
+    for (const part of parts) {
+      const split = part.indexOf("=");
+      const name = (split < 0 ? part : part.slice(0, split)).trim().toLowerCase();
+      const value = split < 0 ? "" : part.slice(split + 1).trim();
+      if (name === "domain") cookie.domain = value.replace(/^\./, "").toLowerCase();
+      else if (name === "path") cookie.path = value || "/";
+      else if (name === "secure") cookie.secure = true;
+      else if (name === "httponly") cookie.httpOnly = true;
+      else if (name === "samesite") cookie.sameSite = value || "Lax";
+      else if (name === "max-age") cookie.expires = config.time_origin_ms / 1000 + numberValue(value);
+      else if (name === "expires") {
+        const parsed = DateIntrinsic.parse(value);
+        if (!numberValue.isNaN(parsed)) cookie.expires = parsed / 1000;
+      }
+    }
+    return cookie;
+  };
+
+  const documentState = new WeakMapIntrinsic();
+  const documentData = value => documentState.get(value);
 
   class Document extends Node {
     constructor() {
       super(Node.DOCUMENT_NODE, "#document", null);
-      this.ownerDocument = null;
-      this.URL = config.url;
-      this.documentURI = config.url;
-      this.referrer = "";
-      this.readyState = "complete";
-      this.visibilityState = "visible";
-      this.hidden = false;
-      this.compatMode = "CSS1Compat";
-      this.characterSet = "UTF-8";
-      this.contentType = "text/html";
-      this._cookies = new MapIntrinsic();
-      this.documentElement = this.createElement("html");
-      this.head = this.createElement("head");
-      this.body = this.createElement("body");
-      this.appendChild(this.documentElement);
-      this.documentElement.appendChild(this.head);
-      this.documentElement.appendChild(this.body);
+      const state = { documentElement: null, head: null, body: null };
+      documentState.set(this, state);
+      state.documentElement = this.createElement("html");
+      state.head = this.createElement("head");
+      state.body = this.createElement("body");
+      this.appendChild(state.documentElement);
+      state.documentElement.appendChild(state.head);
+      state.documentElement.appendChild(state.body);
     }
+    get URL() { return activeLocation ? activeLocation.href : config.url; }
+    get documentURI() { return this.URL; }
+    get referrer() { return ""; }
+    get readyState() { return "complete"; }
+    get visibilityState() { return "visible"; }
+    get hidden() { return false; }
+    get compatMode() { return "CSS1Compat"; }
+    get characterSet() { return "UTF-8"; }
+    get charset() { return "UTF-8"; }
+    get inputEncoding() { return "UTF-8"; }
+    get contentType() { return "text/html"; }
+    get documentElement() { return documentData(this).documentElement; }
+    get head() { return documentData(this).head; }
+    get body() { return documentData(this).body; }
+    set body(value) { documentData(this).body = value; }
+    get currentScript() { return null; }
+    get defaultView() { return globalObject; }
     createElement(tagName) {
       const name = stringValue(tagName).toLowerCase();
       if (name === "iframe") return new HTMLIFrameElement(name, this);
@@ -663,12 +929,10 @@
     }
     querySelector(selector) { return querySelectorFrom(this, selector, false); }
     querySelectorAll(selector) { return querySelectorFrom(this, selector, true); }
-    get cookie() { return ArrayIntrinsic.from(this._cookies, ([name, value]) => `${name}=${value}`).join("; "); }
+    get cookie() { return visibleCookies(false).map(cookie => `${cookie.name}=${cookie.value}`).join("; "); }
     set cookie(serialized) {
-      const pair = stringValue(serialized).split(";", 1)[0];
-      const separator = pair.indexOf("=");
-      if (separator <= 0) return;
-      this._cookies.set(pair.slice(0, separator).trim(), pair.slice(separator + 1).trim());
+      const cookie = parseCookieAssignment(serialized);
+      if (cookie) storeCookie(cookie);
       logApi("Document.prototype", "cookie", "set", [serialized], undefined);
     }
   }
@@ -884,22 +1148,49 @@
       protocol, host, hostname, port, pathname, search: match[4] || "", hash: match[5] || ""
     };
   };
-  const locationUrl = parseLocation(config.url);
-  const location = {
-    href: locationUrl.href,
-    origin: locationUrl.origin,
-    protocol: locationUrl.protocol,
-    host: locationUrl.host,
-    hostname: locationUrl.hostname,
-    port: locationUrl.port,
-    pathname: locationUrl.pathname,
-    search: locationUrl.search,
-    hash: locationUrl.hash,
-    assign(value) { this.href = stringValue(value); },
-    replace(value) { this.href = stringValue(value); },
-    reload() {},
-    toString() { return this.href; }
+  const resolveLocation = value => {
+    const text = stringValue(value);
+    if (/^[a-zA-Z][\w+.-]*:/.test(text)) return text;
+    const base = locationState;
+    if (text.startsWith("//")) return `${base.protocol}${text}`;
+    if (text.startsWith("/")) return `${base.origin}${text}`;
+    if (text.startsWith("?")) return `${base.origin}${base.pathname}${text}`;
+    if (text.startsWith("#")) return `${base.origin}${base.pathname}${base.search}${text}`;
+    const directory = base.pathname.slice(0, base.pathname.lastIndexOf("/") + 1);
+    return `${base.origin}${directory}${text}`;
   };
+  let locationState = parseLocation(config.url);
+  const pendingNavigations = [];
+  const location = {};
+  const navigate = (kind, value) => {
+    const from = locationState.href;
+    const to = resolveLocation(value);
+    locationState = parseLocation(to);
+    pendingNavigations.push(ObjectIntrinsic.freeze({ kind, from, url: locationState.href }));
+    logApi("Location.prototype", kind, "call", [value], undefined);
+  };
+  for (const key of ["href", "protocol", "host", "hostname", "port", "pathname", "search", "hash"]) {
+    ObjectIntrinsic.defineProperty(location, key, {
+      get: () => locationState[key],
+      set: value => {
+        if (key === "href") navigate("assign", value);
+        else {
+          const next = { ...locationState, [key]: stringValue(value) };
+          navigate("assign", `${next.protocol}//${next.host}${next.pathname}${next.search}${next.hash}`);
+        }
+      },
+      enumerable: true,
+      configurable: false
+    });
+  }
+  ObjectIntrinsic.defineProperty(location, "origin", {
+    get: () => locationState.origin, enumerable: true, configurable: false
+  });
+  data(location, "assign", function assign(value) { navigate("assign", value); });
+  data(location, "replace", function replace(value) { navigate("replace", value); });
+  data(location, "reload", function reload() { pendingNavigations.push(ObjectIntrinsic.freeze({ kind: "reload", from: locationState.href, url: locationState.href })); });
+  data(location, "toString", function toString() { return locationState.href; });
+  activeLocation = location;
   registerTraceTarget(location, "Location.prototype");
   const navigator = {};
   registerTraceTarget(navigator, "Navigator.prototype");
@@ -1027,7 +1318,274 @@
   data(globalObject, "addEventListener", EventTarget.prototype.addEventListener.bind(globalObject));
   data(globalObject, "removeEventListener", EventTarget.prototype.removeEventListener.bind(globalObject));
   data(globalObject, "dispatchEvent", EventTarget.prototype.dispatchEvent.bind(globalObject));
-  data(globalObject, "_listeners", new MapIntrinsic(), false);
+
+  const surfaceManifest = config.surface_manifest;
+  const generatedSlots = new WeakMapIntrinsic();
+  const nativeSources = new WeakMapIntrinsic();
+  const callableOwners = new WeakMapIntrinsic();
+  const originalFunctionToString = FunctionIntrinsic.prototype.toString;
+  const markNative = (callable, spec) => {
+    if (typeof callable !== "function" || !spec) return callable;
+    try { ObjectIntrinsic.defineProperty(callable, "name", { value: spec.name, configurable: true }); } catch (_error) {}
+    try { ObjectIntrinsic.defineProperty(callable, "length", { value: spec.length, configurable: true }); } catch (_error) {}
+    if (spec.native_like) nativeSources.set(callable, `function ${spec.name || ""}() { [native code] }`);
+    return callable;
+  };
+  const nativeToString = markNative(function toString() {
+    if (nativeSources.has(this)) return nativeSources.get(this);
+    return ReflectIntrinsic.apply(originalFunctionToString, this, []);
+  }, { name: "toString", length: 0, native_like: true });
+  ObjectIntrinsic.defineProperty(FunctionIntrinsic.prototype, "toString", {
+    ...ObjectIntrinsic.getOwnPropertyDescriptor(FunctionIntrinsic.prototype, "toString"),
+    value: nativeToString
+  });
+  ObjectIntrinsic.defineProperty(DateIntrinsic, "now", {
+    ...ObjectIntrinsic.getOwnPropertyDescriptor(DateIntrinsic, "now"),
+    value: markNative(function now() {
+      return MathIntrinsic.floor(config.time_origin_ms + performance.now());
+    }, { name: "now", length: 0, native_like: true })
+  });
+
+  const manifestKey = key => {
+    if (key.kind === "string") return key.display;
+    if (key.registry_key != null) return Symbol.for(key.registry_key);
+    const wellKnown = {
+      "Symbol(Symbol.iterator)": Symbol.iterator,
+      "Symbol(Symbol.toStringTag)": Symbol.toStringTag,
+      "Symbol(Symbol.toPrimitive)": Symbol.toPrimitive,
+      "Symbol(Symbol.hasInstance)": Symbol.hasInstance,
+      "Symbol(Symbol.match)": Symbol.match,
+      "Symbol(Symbol.matchAll)": Symbol.matchAll,
+      "Symbol(Symbol.replace)": Symbol.replace,
+      "Symbol(Symbol.search)": Symbol.search,
+      "Symbol(Symbol.species)": Symbol.species,
+      "Symbol(Symbol.split)": Symbol.split,
+      "Symbol(Symbol.unscopables)": Symbol.unscopables
+    };
+    return wellKnown[key.display] || Symbol(key.description || "");
+  };
+  const interfaceTag = path => path.replace(/\.prototype$/, "").split(".").pop();
+  const slotsFor = receiver => {
+    if (!objectLike(receiver)) return new MapIntrinsic();
+    let slots = generatedSlots.get(receiver);
+    if (!slots) { slots = new MapIntrinsic(); generatedSlots.set(receiver, slots); }
+    return slots;
+  };
+  const accessorDefault = (path, key, receiver) => {
+    const slots = slotsFor(receiver);
+    if (slots.has(key)) return slots.get(key);
+    const node = nodeState.get(receiver);
+    if (node && ObjectIntrinsic.prototype.hasOwnProperty.call(node, key)) return node[key];
+    const element = elementState.get(receiver);
+    if (element && ObjectIntrinsic.prototype.hasOwnProperty.call(element, key)) return element[key];
+    const documentValues = documentState.get(receiver);
+    if (documentValues && ObjectIntrinsic.prototype.hasOwnProperty.call(documentValues, key)) return documentValues[key];
+    if (path === "Navigator.prototype") {
+      const values = {
+        userAgent: profile.user_agent, appVersion: profile.user_agent.replace(/^Mozilla\//, ""),
+        appCodeName: "Mozilla", appName: "Netscape", platform: profile.platform,
+        language: profile.language, languages: ObjectIntrinsic.freeze(profile.languages.slice()),
+        hardwareConcurrency: profile.hardware_concurrency, deviceMemory: 8, maxTouchPoints: 0,
+        webdriver: false, cookieEnabled: true, onLine: true, product: "Gecko",
+        productSub: "20030107", vendor: "Google Inc.", vendorSub: "", pdfViewerEnabled: true
+      };
+      if (ObjectIntrinsic.prototype.hasOwnProperty.call(values, key)) return values[key];
+      if (key === "plugins" || key === "mimeTypes") return ObjectIntrinsic.freeze([]);
+    }
+    if (path === "Screen.prototype") {
+      const values = {
+        width: profile.screen_width, height: profile.screen_height,
+        availWidth: profile.screen_avail_width, availHeight: profile.screen_avail_height,
+        colorDepth: profile.screen_depth, pixelDepth: profile.screen_depth,
+        availLeft: 0, availTop: 0, orientation: null
+      };
+      if (ObjectIntrinsic.prototype.hasOwnProperty.call(values, key)) return values[key];
+    }
+    if (path === "Performance.prototype" && key === "timeOrigin") return config.time_origin_ms;
+    if (path === "Document.prototype") {
+      const values = {
+        URL: location.href, documentURI: location.href, referrer: "", readyState: "complete",
+        visibilityState: "visible", hidden: false, compatMode: "CSS1Compat",
+        characterSet: "UTF-8", charset: "UTF-8", inputEncoding: "UTF-8",
+        contentType: "text/html", defaultView: globalObject, currentScript: null
+      };
+      if (ObjectIntrinsic.prototype.hasOwnProperty.call(values, key)) return values[key];
+    }
+    if (/^(on|aria)/.test(key)) return null;
+    if (/^(hidden|disabled|draggable|spellcheck|is|was|webkitHidden)/.test(key)) return false;
+    return null;
+  };
+  const stubFunction = spec => markNative(function () {}, spec);
+  const stubValue = (path, member) => {
+    if (member.f) return stubFunction(member.f);
+    if (member.k.kind === "symbol" && member.k.display === "Symbol(Symbol.toStringTag)")
+      return interfaceTag(path);
+    if (member.t === "number") return 0;
+    if (member.t === "string") return "";
+    if (member.t === "boolean") return false;
+    if (member.t === "undefined") return undefined;
+    if (member.t === "function") return stubFunction({ name: member.k.display, length: 0, native_like: true });
+    return {};
+  };
+  const makeConstructor = name => {
+    const constructor = function () {};
+    return markNative(constructor, { name, length: 0, native_like: true });
+  };
+  const surfaceObjects = new MapIntrinsic([
+    ["globalThis", globalObject], ["Object", ObjectIntrinsic], ["Object.prototype", ObjectIntrinsic.prototype],
+    ["Function", FunctionIntrinsic], ["Function.prototype", FunctionIntrinsic.prototype]
+  ]);
+  const interfaces = surfaceManifest && ArrayIntrinsic.isArray(surfaceManifest.interfaces)
+    ? surfaceManifest.interfaces : [];
+  const manifestByPath = new MapIntrinsic(interfaces.map(spec => [spec.path, spec]));
+  normalizeOwnKeys = (target, keys) => {
+    target = rawTraceValue(target);
+    const path = target === globalObject ? "globalThis" : semanticTraceTarget(target);
+    const spec = path && manifestByPath.get(path);
+    if (!spec) return keys;
+    const available = new SetIntrinsic(keys);
+    const ordered = spec.members.map(member => manifestKey(member.k)).filter(key => available.has(key));
+    const expected = new SetIntrinsic(ordered);
+    for (const key of keys) if (!expected.has(key)) ordered.push(key);
+    return ordered;
+  };
+  for (const spec of interfaces) {
+    if (surfaceObjects.has(spec.path) || spec.path === "globalThis") continue;
+    if (spec.path.endsWith(".prototype")) {
+      const name = spec.path.slice(0, -10);
+      let constructor = surfaceObjects.get(name) || globalObject[name];
+      if (typeof constructor !== "function") {
+        constructor = makeConstructor(name);
+        data(globalObject, name, constructor, false);
+      }
+      surfaceObjects.set(name, constructor);
+      surfaceObjects.set(spec.path, constructor.prototype);
+    } else {
+      let value = globalObject[spec.path];
+      if (spec.value_type === "function" && typeof value !== "function") {
+        value = makeConstructor(spec.path);
+        data(globalObject, spec.path, value, false);
+      }
+      if (objectLike(value)) surfaceObjects.set(spec.path, value);
+    }
+  }
+  for (const spec of interfaces) {
+    const object = surfaceObjects.get(spec.path);
+    const prototype = spec.prototype_path && surfaceObjects.get(spec.prototype_path);
+    if (objectLike(object) && objectLike(prototype)) {
+      try { ReflectIntrinsic.setPrototypeOf(object, prototype); } catch (_error) {}
+    }
+  }
+  const bindInstance = (value, name, migrateOwn = true) => {
+    const prototype = surfaceObjects.get(`${name}.prototype`);
+    if (!objectLike(value) || !objectLike(prototype)) return;
+    try { ReflectIntrinsic.setPrototypeOf(value, prototype); } catch (_error) {}
+    registerTraceTarget(value, `${name}.prototype`);
+    if (!migrateOwn) return;
+    const spec = interfaces.find(item => item.path === `${name}.prototype`);
+    if (!spec) return;
+    const slots = slotsFor(value);
+    for (const member of spec.members) {
+      if (member.k.kind !== "string" || member.d !== "accessor") continue;
+      const descriptor = ObjectIntrinsic.getOwnPropertyDescriptor(value, member.k.display);
+      if (!descriptor || !descriptor.configurable || !("value" in descriptor)) continue;
+      slots.set(member.k.display, descriptor.value);
+      delete value[member.k.display];
+    }
+  };
+  bindInstance(navigator, "Navigator");
+  bindInstance(screen, "Screen");
+  bindInstance(location, "Location", false);
+  const nativeNow = ObjectIntrinsic.getOwnPropertyDescriptor(performance, "now");
+  bindInstance(performance, "Performance");
+  if (nativeNow && typeof nativeNow.value === "function") {
+    ObjectIntrinsic.defineProperty(surfaceObjects.get("Performance.prototype"), "now", nativeNow);
+    if (ObjectIntrinsic.getOwnPropertyDescriptor(performance, "now")?.configurable) delete performance.now;
+  }
+  bindInstance(document, "Document");
+
+  const applyMember = (path, object, member) => {
+    const key = manifestKey(member.k);
+    const current = ObjectIntrinsic.getOwnPropertyDescriptor(object, key);
+    if (current && !current.configurable) {
+      if (current.value && member.f) markNative(current.value, member.f);
+      if (member.d === "data" && current.writable && member.w === false) {
+        try { ObjectIntrinsic.defineProperty(object, key, { ...current, writable: false }); } catch (_error) {}
+      }
+      return;
+    }
+    if (member.d === "data") {
+      let value = current && "value" in current ? current.value : stubValue(path, member);
+      const previousOwner = typeof value === "function" ? callableOwners.get(value) : undefined;
+      if (member.f && typeof value === "function" && previousOwner && previousOwner !== member.f.name) {
+        const original = value;
+        value = function (...args) { return ReflectIntrinsic.apply(original, this, args); };
+      }
+      if (member.f) {
+        markNative(value, member.f);
+        callableOwners.set(value, member.f.name);
+      }
+      ObjectIntrinsic.defineProperty(object, key, {
+        value, writable: !!member.w, enumerable: !!member.e, configurable: !!member.c
+      });
+      return;
+    }
+    let backing = current && "value" in current ? current.value : undefined;
+    const get = current && current.get || markNative(function () {
+      return backing !== undefined ? backing : accessorDefault(path, stringValue(key), this);
+    }, member.g);
+    const set = current && current.set || (member.s ? markNative(function (value) {
+      backing = value;
+      slotsFor(this).set(stringValue(key), value);
+    }, member.s) : undefined);
+    if (get && member.g) markNative(get, member.g);
+    if (set && member.s) markNative(set, member.s);
+    ObjectIntrinsic.defineProperty(object, key, {
+      get, set, enumerable: !!member.e, configurable: !!member.c
+    });
+  };
+  const reorderConfigurableMembers = (object, spec) => {
+    const expected = spec.members.map(member => manifestKey(member.k));
+    const actual = reflectOwnKeysIntrinsic(object);
+    if (actual.length === expected.length && actual.every((key, index) => key === expected[index])) return;
+    const saved = new MapIntrinsic();
+    for (const key of expected) {
+      const descriptor = ObjectIntrinsic.getOwnPropertyDescriptor(object, key);
+      if (descriptor && descriptor.configurable) {
+        saved.set(key, descriptor);
+        ReflectIntrinsic.deleteProperty(object, key);
+      }
+    }
+    for (const key of expected) {
+      const descriptor = saved.get(key);
+      if (descriptor) ObjectIntrinsic.defineProperty(object, key, descriptor);
+    }
+  };
+  for (const spec of interfaces) {
+    if (spec.path === "globalThis") continue;
+    const object = surfaceObjects.get(spec.path);
+    if (!objectLike(object)) continue;
+    const expected = new SetIntrinsic(spec.members.map(member => manifestKey(member.k)));
+    for (const key of ReflectIntrinsic.ownKeys(object)) {
+      if (expected.has(key)) continue;
+      const descriptor = ObjectIntrinsic.getOwnPropertyDescriptor(object, key);
+      if (descriptor && descriptor.configurable) ReflectIntrinsic.deleteProperty(object, key);
+    }
+    for (const member of spec.members) applyMember(spec.path, object, member);
+    reorderConfigurableMembers(object, spec);
+    registerTraceTarget(object, spec.path);
+  }
+  const globalSpec = interfaces.find(spec => spec.path === "globalThis");
+  if (globalSpec) {
+    const expected = new SetIntrinsic(globalSpec.members.map(member => manifestKey(member.k)));
+    for (const key of ReflectIntrinsic.ownKeys(globalObject)) {
+      if (expected.has(key) || (typeof key === "string" && key.startsWith("__yatou"))) continue;
+      const descriptor = ObjectIntrinsic.getOwnPropertyDescriptor(globalObject, key);
+      if (descriptor && descriptor.configurable) ReflectIntrinsic.deleteProperty(globalObject, key);
+    }
+    for (const member of globalSpec.members) applyMember("globalThis", globalObject, member);
+  }
+
   if (getTraceConfig.enabled) {
     const descriptor = ObjectIntrinsic.getOwnPropertyDescriptor(globalObject, "performance");
     if (descriptor && ObjectIntrinsic.prototype.hasOwnProperty.call(descriptor, "value")) {
@@ -1039,8 +1597,13 @@
       });
     }
   }
-  data(performance, "timeOrigin", config.time_origin_ms);
-  data(document, "defaultView", globalObject);
+  data(globalObject, "__yatouImportCookies", cookies => {
+    for (const cookie of ArrayIntrinsic.from(cookies || [])) storeCookie(cookie);
+    return visibleCookies(true).length;
+  }, false);
+  data(globalObject, "__yatouExportCookies", () => visibleCookies(true).map(cookie => ({ ...cookie })), false);
+  data(globalObject, "__yatouTakeNavigation", () => pendingNavigations.shift() || null, false);
+  data(globalObject, "__yatouPeekNavigation", () => pendingNavigations[0] || null, false);
   data(globalObject, "__yatouEnvironment", ObjectIntrinsic.freeze({
     url: config.url,
     baseline: config.baseline,
@@ -1055,4 +1618,5 @@
       maxEvents: getTraceConfig.maxEvents
     })
   }), false);
+  installReflectionTracing();
 })()

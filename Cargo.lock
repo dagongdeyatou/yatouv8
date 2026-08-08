@@ -1000,6 +1000,7 @@ dependencies = [
  "thiserror",
  "v8",
  "yatou-schema",
+ "yatou-surface",
 ]
 
 [[package]]
@@ -1036,7 +1037,6 @@ dependencies = [
  "serde",
  "serde_json",
  "thiserror",
- "yatou-core",
  "yatou-schema",
 ]
 

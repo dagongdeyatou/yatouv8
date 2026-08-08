@@ -10,7 +10,6 @@ repository.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 thiserror.workspace = true
-yatou-core = { path = "../yatou-core" }
 yatou-schema = { path = "../yatou-schema" }
 
 [[example]]

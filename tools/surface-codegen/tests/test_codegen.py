@@ -76,6 +76,21 @@ class SurfaceCodegenTest(unittest.TestCase):
             surface_codegen.render_rust(first),
             surface_codegen.render_rust(second),
         )
+        self.assertEqual(
+            surface_codegen.runtime_manifest(first),
+            surface_codegen.runtime_manifest(second),
+        )
+
+    def test_runtime_manifest_strips_evidence_but_keeps_callable_shape(self):
+        with tempfile.TemporaryDirectory() as directory:
+            snapshot = self.fixture(Path(directory))
+            manifest = surface_codegen.derive_manifest(snapshot)
+            runtime = surface_codegen.runtime_manifest(manifest)
+        member = runtime["interfaces"][0]["members"][0]
+        self.assertNotIn("evidence_refs", member)
+        self.assertEqual(member["d"], "data")
+        self.assertEqual(member["f"]["name"], "now")
+        self.assertTrue(member["f"]["native_like"])
 
 
 if __name__ == "__main__":

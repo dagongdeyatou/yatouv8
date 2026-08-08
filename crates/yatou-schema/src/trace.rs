@@ -190,6 +190,16 @@ pub enum ApiOperation {
     Call,
     /// Constructor invocation.
     Construct,
+    /// Enumeration of an object's own string and/or symbol keys.
+    OwnKeys,
+    /// Lookup of one own-property descriptor without invoking its accessor.
+    GetOwnPropertyDescriptor,
+    /// Lookup of an object's direct prototype.
+    GetPrototypeOf,
+    /// Property-presence test (`in`, `Reflect.has`, or an equivalent host trap).
+    Has,
+    /// Definition or redefinition of an own property.
+    DefineProperty,
 }
 
 /// Result of an L1 browser-surface operation.

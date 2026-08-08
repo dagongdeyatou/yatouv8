@@ -125,6 +125,37 @@ impl PyRuntime {
         serde_json::to_string(&environment).map_err(runtime_error)
     }
 
+    /// Import a JSON array of cookies and return the resulting jar size.
+    fn import_cookies_json(&self, py: Python<'_>, cookies_json: String) -> PyResult<u64> {
+        let cookies = serde_json::from_str(&cookies_json).map_err(runtime_error)?;
+        py.detach(|| self.runtime.import_cookies(cookies))
+            .map_err(runtime_error)
+    }
+
+    /// Export structured cookies as JSON.
+    fn export_cookies_json(&self, py: Python<'_>) -> PyResult<String> {
+        let cookies = py
+            .detach(|| self.runtime.export_cookies())
+            .map_err(runtime_error)?;
+        serde_json::to_string(&cookies).map_err(runtime_error)
+    }
+
+    /// Peek or consume the next structured navigation request.
+    fn navigation_json(&self, py: Python<'_>, take: bool) -> PyResult<String> {
+        let navigation = py
+            .detach(|| self.runtime.navigation(take))
+            .map_err(runtime_error)?;
+        serde_json::to_string(&navigation).map_err(runtime_error)
+    }
+
+    /// Return property/reflection trace counters as JSON.
+    fn trace_stats_json(&self, py: Python<'_>) -> PyResult<String> {
+        let stats = py
+            .detach(|| self.runtime.trace_stats())
+            .map_err(runtime_error)?;
+        serde_json::to_string(&stats).map_err(runtime_error)
+    }
+
     /// Close the owner thread. Idempotent.
     fn close(&self, py: Python<'_>) -> PyResult<()> {
         py.detach(|| self.runtime.close()).map_err(runtime_error)

@@ -18,6 +18,7 @@ sha2.workspace = true
 thiserror.workspace = true
 v8 = { workspace = true, optional = true }
 yatou-schema = { path = "../yatou-schema" }
+yatou-surface = { path = "../yatou-surface" }
 
 [[example]]
 name = "v8_smoke"
@@ -43,6 +44,14 @@ required-features = ["v8-runtime"]
 
 [[example]]
 name = "m10_quality"
+required-features = ["v8-runtime"]
+
+[[example]]
+name = "surface_acceptance"
+required-features = ["v8-runtime"]
+
+[[example]]
+name = "sgss_acceptance"
 required-features = ["v8-runtime"]
 
 [lints]

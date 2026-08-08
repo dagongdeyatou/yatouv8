@@ -72,7 +72,17 @@ def admit(
             "independent_physical_validation": True,
             "strict_l0_consumption": True,
             "network_fallback": False,
-            "l1_operations": ["get", "set", "call", "construct"],
+            "l1_operations": [
+                "get",
+                "set",
+                "call",
+                "construct",
+                "own_keys",
+                "get_own_property_descriptor",
+                "get_prototype_of",
+                "has",
+                "define_property",
+            ],
         },
         "artifacts": [
             {

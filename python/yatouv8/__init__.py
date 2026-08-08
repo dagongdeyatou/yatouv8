@@ -3,6 +3,7 @@
 from ._native import build_info, v8_smoke_value
 from .runtime import (
     BrowserProfile,
+    ChallengeResult,
     Context,
     GetTraceConfig,
     JSException,
@@ -13,6 +14,7 @@ from .runtime import (
 
 __all__ = [
     "BrowserProfile",
+    "ChallengeResult",
     "Context",
     "GetTraceConfig",
     "JSException",

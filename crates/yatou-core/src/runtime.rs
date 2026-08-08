@@ -48,8 +48,17 @@ pub enum V8Error {
     Trace(String),
 }
 
+/// One run-length encoded observation from an accepted Chrome clock capture.
+#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
+pub struct ClockBucket {
+    /// Exact `performance.now()` value observed in Chrome.
+    pub value_ms: f64,
+    /// Number of consecutive calls that returned this value.
+    pub repeat: u32,
+}
+
 /// Configurable `performance.now()` behavior.
-#[derive(Clone, Copy, Debug, Deserialize, PartialEq, Serialize)]
+#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
 #[serde(tag = "mode", rename_all = "snake_case")]
 pub enum ClockMode {
     /// Monotonic fixed increments suitable for deterministic replay.
@@ -58,6 +67,16 @@ pub enum ClockMode {
         start_ms: f64,
         /// Increment after every observation.
         step_ms: f64,
+    },
+    /// Replay a run-length encoded Chrome distribution, then continue with the
+    /// captured quantization rather than inventing random jitter.
+    Recorded {
+        /// Consecutive Chrome values and their observed repeat counts.
+        buckets: Vec<ClockBucket>,
+        /// Quantized increment used after the finite capture is exhausted.
+        fallback_quantum_ms: f64,
+        /// Calls sharing one fallback quantum.
+        fallback_repeats: u32,
     },
 }
 
@@ -103,12 +122,58 @@ impl Default for BrowserProfile {
             screen_avail_width: 1_920,
             screen_avail_height: 1_032,
             screen_depth: 24,
-            clock: ClockMode::FixedStep {
-                start_ms: 79.7,
-                step_ms: 0.1,
+            clock: ClockMode::Recorded {
+                buckets: default_chrome_clock_buckets(),
+                fallback_quantum_ms: 0.1,
+                fallback_repeats: 24,
             },
         }
     }
+}
+
+fn default_chrome_clock_buckets() -> Vec<ClockBucket> {
+    // win11-chrome150.0.7871.188-headful-m2-v2, captured 2026-08-07.
+    const OBSERVATIONS: &[(f64, u32)] = &[
+        (79.700_000_047_683_72, 42),
+        (79.800_000_011_920_93, 56),
+        (79.900_000_035_762_79, 158),
+        (82.0, 1),
+        (83.900_000_035_762_79, 1),
+        (86.0, 1),
+        (87.300_000_011_920_93, 1),
+        (88.400_000_035_762_79, 1),
+        (89.800_000_011_920_93, 1),
+        (94.300_000_011_920_93, 1),
+        (98.800_000_011_920_93, 1),
+        (103.300_000_011_920_93, 1),
+        (107.5, 1),
+        (112.100_000_023_841_86, 1),
+        (117.0, 1),
+        (121.800_000_011_920_93, 1),
+        (126.700_000_047_683_72, 1),
+        (131.100_000_023_841_86, 1),
+        (135.700_000_047_683_72, 1),
+        (140.600_000_023_841_86, 1),
+        (144.900_000_035_762_8, 1),
+        (149.300_000_011_920_93, 1),
+        (154.100_000_023_841_86, 1),
+        (167.400_000_035_762_8, 1),
+        (172.100_000_023_841_86, 1),
+        (177.300_000_011_920_93, 1),
+        (181.5, 1),
+        (186.600_000_023_841_86, 1),
+        (190.700_000_047_683_72, 1),
+        (195.0, 1),
+        (199.5, 1),
+        (203.800_000_011_920_93, 1),
+        (208.400_000_035_762_8, 1),
+        (212.5, 1),
+        (217.200_000_047_683_72, 1),
+    ];
+    OBSERVATIONS
+        .iter()
+        .map(|&(value_ms, repeat)| ClockBucket { value_ms, repeat })
+        .collect()
 }
 
 /// End-to-end result of executing the archived Google `BotGuard` model.
@@ -145,6 +210,10 @@ struct NativeObservation {
 struct CallbackState {
     clock_next_ms: f64,
     clock_step_ms: f64,
+    clock_recorded: Vec<f64>,
+    clock_index: usize,
+    clock_fallback_repeats: u32,
+    clock_fallback_count: u32,
     observation_sequence: u32,
     observations: Vec<NativeObservation>,
 }
@@ -154,6 +223,10 @@ impl Default for CallbackState {
         Self {
             clock_next_ms: 0.0,
             clock_step_ms: 0.1,
+            clock_recorded: Vec::new(),
+            clock_index: 0,
+            clock_fallback_repeats: 1,
+            clock_fallback_count: 0,
             observation_sequence: 0,
             observations: Vec::new(),
         }
@@ -221,7 +294,7 @@ pub fn run_botguard(
     profile: &BrowserProfile,
 ) -> Result<BotguardRun, V8Error> {
     initialize_v8();
-    configure_callbacks(profile.clock);
+    configure_callbacks(&profile.clock);
 
     let isolate = &mut v8::Isolate::new(v8::CreateParams::default());
     v8::scope!(let handle_scope, isolate);
@@ -264,12 +337,30 @@ pub fn run_botguard(
     finish_botguard_run(model_source, envelope, &observations)
 }
 
-fn configure_callbacks(clock: ClockMode) {
-    let ClockMode::FixedStep { start_ms, step_ms } = clock;
+fn configure_callbacks(clock: &ClockMode) {
+    let (clock_next_ms, clock_step_ms, clock_recorded, clock_fallback_repeats) = match clock {
+        ClockMode::FixedStep { start_ms, step_ms } => (*start_ms, *step_ms, Vec::new(), 1),
+        ClockMode::Recorded {
+            buckets,
+            fallback_quantum_ms,
+            fallback_repeats,
+        } => {
+            let values = buckets
+                .iter()
+                .flat_map(|bucket| std::iter::repeat_n(bucket.value_ms, bucket.repeat as usize))
+                .collect::<Vec<_>>();
+            let start = values.first().copied().unwrap_or(0.0);
+            (start, *fallback_quantum_ms, values, *fallback_repeats)
+        }
+    };
     CALLBACK_STATE.with(|state| {
         *state.borrow_mut() = CallbackState {
-            clock_next_ms: start_ms,
-            clock_step_ms: step_ms,
+            clock_next_ms,
+            clock_step_ms,
+            clock_recorded,
+            clock_index: 0,
+            clock_fallback_repeats,
+            clock_fallback_count: 0,
             observation_sequence: 0,
             observations: Vec::new(),
         };
@@ -406,8 +497,17 @@ fn performance_now_callback(
 ) {
     let value = CALLBACK_STATE.with(|state| {
         let mut state = state.borrow_mut();
+        if let Some(value) = state.clock_recorded.get(state.clock_index).copied() {
+            state.clock_index += 1;
+            state.clock_next_ms = value;
+            return value;
+        }
         let value = state.clock_next_ms;
-        state.clock_next_ms += state.clock_step_ms;
+        state.clock_fallback_count = state.clock_fallback_count.saturating_add(1);
+        if state.clock_fallback_count >= state.clock_fallback_repeats {
+            state.clock_next_ms += state.clock_step_ms;
+            state.clock_fallback_count = 0;
+        }
         value
     });
     record_native(
@@ -434,9 +534,8 @@ fn global_get_trace_callback(
     let value = holder.get_real_named_property(scope, key.into());
 
     if !member.starts_with("__yatou") {
-        let logger_name = v8::String::new(scope, "__yatouRecordGlobalGet");
-        let logger = logger_name
-            .and_then(|logger_name| holder.get_real_named_property(scope, logger_name.into()))
+        let logger = runtime_bridge(scope, holder)
+            .and_then(|bridge| bridge_member(scope, bridge, "__yatouRecordGlobalGet"))
             .and_then(|logger| v8::Local::<v8::Function>::try_from(logger).ok());
         let mut observed_value = value;
         if let Some(logger) = logger {
@@ -465,6 +564,111 @@ fn global_get_trace_callback(
     }
 }
 
+#[allow(clippy::needless_pass_by_value)]
+fn global_descriptor_fallthrough_callback(
+    _scope: &mut v8::PinScope,
+    _key: v8::Local<v8::Name>,
+    _args: v8::PropertyCallbackArguments,
+    _retval: v8::ReturnValue<v8::Value>,
+) -> v8::Intercepted {
+    v8::Intercepted::kNo
+}
+
+const RUNTIME_BRIDGE_PRIVATE: &str = "yatouv8.runtime.bridge";
+
+fn runtime_bridge<'s>(
+    scope: &mut v8::PinScope<'s, '_>,
+    global: v8::Local<v8::Object>,
+) -> Option<v8::Local<'s, v8::Object>> {
+    let name = v8::String::new(scope, RUNTIME_BRIDGE_PRIVATE)?;
+    let key = v8::Private::for_api(scope, Some(name));
+    let value = global.get_private(scope, key)?;
+    v8::Local::<v8::Object>::try_from(value).ok()
+}
+
+fn bridge_member<'s>(
+    scope: &mut v8::PinScope<'s, '_>,
+    bridge: v8::Local<v8::Object>,
+    name: &str,
+) -> Option<v8::Local<'s, v8::Value>> {
+    let key = v8::String::new(scope, name)?;
+    bridge.get(scope, key.into())
+}
+
+fn capture_runtime_bridge(
+    scope: &mut v8::PinScope,
+    context: v8::Local<v8::Context>,
+) -> Result<v8::Global<v8::Object>, V8Error> {
+    const MEMBERS: &[&str] = &[
+        "__yatouNextObservationSequence",
+        "__yatouTakeHostLog",
+        "__yatouSetGetTraceActive",
+        "__yatouRecordGlobalGet",
+        "__yatouGetTraceStats",
+        "__yatouInstallResource",
+        "__yatouDrain",
+        "__yatouImportCookies",
+        "__yatouExportCookies",
+        "__yatouTakeNavigation",
+        "__yatouPeekNavigation",
+        "__yatouEnvironment",
+    ];
+    let global = context.global(scope);
+    let bridge = v8::Object::new(scope);
+    for &member in MEMBERS {
+        let key = v8::String::new(scope, member).ok_or(V8Error::SourceAllocation)?;
+        let value = global
+            .get_real_named_property(scope, key.into())
+            .ok_or(V8Error::NativeInstallation(member))?;
+        if !bridge.set(scope, key.into(), value).unwrap_or(false) {
+            return Err(V8Error::NativeInstallation(member));
+        }
+    }
+    let private_name =
+        v8::String::new(scope, RUNTIME_BRIDGE_PRIVATE).ok_or(V8Error::SourceAllocation)?;
+    let private = v8::Private::for_api(scope, Some(private_name));
+    if !global
+        .set_private(scope, private, bridge.into())
+        .unwrap_or(false)
+    {
+        return Err(V8Error::NativeInstallation("runtime bridge"));
+    }
+    for member in MEMBERS.iter().copied().chain(["__yatouConfig"]) {
+        let key = v8::String::new(scope, member).ok_or(V8Error::SourceAllocation)?;
+        if !global.delete(scope, key.into()).unwrap_or(false) {
+            return Err(V8Error::NativeInstallation("runtime bridge cleanup"));
+        }
+    }
+    Ok(v8::Global::new(scope, bridge))
+}
+
+fn call_runtime_bridge<'s>(
+    scope: &mut v8::PinScope<'s, '_>,
+    bridge: &v8::Global<v8::Object>,
+    member: &str,
+    arguments: &[v8::Local<'s, v8::Value>],
+) -> Result<v8::Local<'s, v8::Value>, V8Error> {
+    let bridge = v8::Local::new(scope, bridge);
+    let function = bridge_member(scope, bridge, member)
+        .and_then(|value| v8::Local::<v8::Function>::try_from(value).ok())
+        .ok_or(V8Error::NativeInstallation("runtime bridge member"))?;
+    function
+        .call(scope, bridge.into(), arguments)
+        .ok_or_else(|| V8Error::Execution(format!("runtime bridge call failed: {member}")))
+}
+
+fn bridge_json<'s>(
+    scope: &mut v8::PinScope<'s, '_>,
+    bridge: &v8::Global<v8::Object>,
+    member: &str,
+    arguments: &[v8::Local<'s, v8::Value>],
+) -> Result<String, V8Error> {
+    let value = call_runtime_bridge(scope, bridge, member, arguments)?;
+    let json = v8::json::stringify(scope, value)
+        .ok_or_else(|| V8Error::Execution(format!("runtime bridge JSON failed: {member}")))?;
+    Ok(json.to_rust_string_lossy(scope))
+}
+
 fn runtime_context<'s>(
     scope: &mut v8::PinScope<'s, '_, ()>,
     get_trace: GetTraceConfig,
@@ -476,6 +680,7 @@ fn runtime_context<'s>(
     global_template.set_named_property_handler(
         v8::NamedPropertyHandlerConfiguration::new()
             .getter(global_get_trace_callback)
+            .descriptor(global_descriptor_fallthrough_callback)
             .flags(v8::PropertyHandlerFlags::ONLY_INTERCEPT_STRINGS),
     );
     v8::Context::new(
@@ -653,6 +858,18 @@ fn execute_to_string(scope: &mut v8::PinScope, source: &str) -> Result<String, V
         .ok_or_else(|| V8Error::Execution("V8 returned no value".to_owned()))?;
     let value = value.to_string(scope).ok_or(V8Error::ResultConversion)?;
     Ok(value.to_rust_string_lossy(scope))
+}
+
+fn execute_value<'s>(
+    scope: &mut v8::PinScope<'s, '_>,
+    source: &str,
+) -> Result<v8::Local<'s, v8::Value>, V8Error> {
+    let source = v8::String::new(scope, source).ok_or(V8Error::SourceAllocation)?;
+    let script = v8::Script::compile(scope, source, None)
+        .ok_or_else(|| V8Error::Compilation("V8 returned no script".to_owned()))?;
+    script
+        .run(scope)
+        .ok_or_else(|| V8Error::Execution("V8 returned no value".to_owned()))
 }
 
 fn finish_botguard_run(
@@ -866,12 +1083,37 @@ impl RuntimeConfig {
                 "device_scale_factor must be finite and positive".to_owned(),
             ));
         }
-        let ClockMode::FixedStep { start_ms, step_ms } = self.profile.clock;
-        if !start_ms.is_finite() || !step_ms.is_finite() || step_ms < 0.0 {
-            return Err(RuntimeError::Configuration(
-                "fixed-step clock values must be finite and step_ms must be non-negative"
-                    .to_owned(),
-            ));
+        match &self.profile.clock {
+            ClockMode::FixedStep { start_ms, step_ms } => {
+                if !start_ms.is_finite() || !step_ms.is_finite() || *step_ms < 0.0 {
+                    return Err(RuntimeError::Configuration(
+                        "fixed-step clock values must be finite and step_ms must be non-negative"
+                            .to_owned(),
+                    ));
+                }
+            }
+            ClockMode::Recorded {
+                buckets,
+                fallback_quantum_ms,
+                fallback_repeats,
+            } => {
+                let mut previous = None;
+                let valid = !buckets.is_empty()
+                    && *fallback_repeats > 0
+                    && fallback_quantum_ms.is_finite()
+                    && *fallback_quantum_ms >= 0.0
+                    && buckets.iter().all(|bucket| {
+                        let ordered = previous.is_none_or(|value| bucket.value_ms >= value);
+                        previous = Some(bucket.value_ms);
+                        bucket.value_ms.is_finite() && bucket.repeat > 0 && ordered
+                    });
+                if !valid {
+                    return Err(RuntimeError::Configuration(
+                        "recorded clock requires ordered finite buckets, positive repeats, and a non-negative fallback quantum"
+                            .to_owned(),
+                    ));
+                }
+            }
         }
         if self.get_trace.enabled
             && (self.get_trace.max_events == 0 || self.get_trace.max_events > 1_000_000)
@@ -940,6 +1182,20 @@ enum RuntimeCommand {
         reply: WorkerReply<TraceStream>,
     },
     Environment {
+        reply: WorkerReply<serde_json::Value>,
+    },
+    ImportCookies {
+        cookies: serde_json::Value,
+        reply: WorkerReply<u64>,
+    },
+    ExportCookies {
+        reply: WorkerReply<serde_json::Value>,
+    },
+    Navigation {
+        take: bool,
+        reply: WorkerReply<serde_json::Value>,
+    },
+    TraceStats {
         reply: WorkerReply<serde_json::Value>,
     },
     Close {
@@ -1075,6 +1331,71 @@ impl BrowserRuntime {
         let (reply, response) = mpsc::channel();
         self.commands
             .send(RuntimeCommand::Environment { reply })
+            .map_err(|_| RuntimeError::Closed)?;
+        recv_worker(&response)
+    }
+
+    /// Import structured cookies into the document jar.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`RuntimeError`] when `cookies` is not an array or the owner
+    /// thread cannot update the jar.
+    pub fn import_cookies(&self, cookies: serde_json::Value) -> Result<u64, RuntimeError> {
+        if !cookies.is_array() {
+            return Err(RuntimeError::Configuration(
+                "cookies must be a JSON array".to_owned(),
+            ));
+        }
+        self.ensure_open()?;
+        let (reply, response) = mpsc::channel();
+        self.commands
+            .send(RuntimeCommand::ImportCookies { cookies, reply })
+            .map_err(|_| RuntimeError::Closed)?;
+        recv_worker(&response)
+    }
+
+    /// Export cookies visible to the current URL, including `HttpOnly` entries
+    /// imported by the host session.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`RuntimeError`] when the owner thread is unavailable.
+    pub fn export_cookies(&self) -> Result<serde_json::Value, RuntimeError> {
+        self.ensure_open()?;
+        let (reply, response) = mpsc::channel();
+        self.commands
+            .send(RuntimeCommand::ExportCookies { reply })
+            .map_err(|_| RuntimeError::Closed)?;
+        recv_worker(&response)
+    }
+
+    /// Peek or consume the next navigation requested by `location.assign`,
+    /// `location.replace`, or `location.reload`.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`RuntimeError`] when the owner thread is unavailable.
+    pub fn navigation(&self, take: bool) -> Result<serde_json::Value, RuntimeError> {
+        self.ensure_open()?;
+        let (reply, response) = mpsc::channel();
+        self.commands
+            .send(RuntimeCommand::Navigation { take, reply })
+            .map_err(|_| RuntimeError::Closed)?;
+        recv_worker(&response)
+    }
+
+    /// Return bounded property/reflection trace counters without exposing an
+    /// internal JavaScript helper on the global object.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`RuntimeError`] when the owner thread is unavailable.
+    pub fn trace_stats(&self) -> Result<serde_json::Value, RuntimeError> {
+        self.ensure_open()?;
+        let (reply, response) = mpsc::channel();
+        self.commands
+            .send(RuntimeCommand::TraceStats { reply })
             .map_err(|_| RuntimeError::Closed)?;
         recv_worker(&response)
     }
@@ -1344,6 +1665,11 @@ impl SessionTrace {
                     "get" => ApiOperation::Get,
                     "set" => ApiOperation::Set,
                     "construct" => ApiOperation::Construct,
+                    "own_keys" => ApiOperation::OwnKeys,
+                    "get_own_property_descriptor" => ApiOperation::GetOwnPropertyDescriptor,
+                    "get_prototype_of" => ApiOperation::GetPrototypeOf,
+                    "has" => ApiOperation::Has,
+                    "define_property" => ApiOperation::DefineProperty,
                     _ => ApiOperation::Call,
                 };
                 let outcome = if threw {
@@ -1462,14 +1788,34 @@ fn runtime_worker(
     ready: mpsc::Sender<Result<(), String>>,
 ) {
     initialize_v8();
-    configure_callbacks(config.profile.clock);
+    configure_callbacks(&config.profile.clock);
     let mut isolate = v8::Isolate::new(v8::CreateParams::default());
     isolate.set_microtasks_policy(v8::MicrotasksPolicy::Explicit);
-    let setup = (|| -> Result<v8::Global<v8::Context>, V8Error> {
+    let setup = (|| -> Result<(v8::Global<v8::Context>, v8::Global<v8::Object>), V8Error> {
         v8::scope!(let handle_scope, &mut isolate);
         let context = runtime_context(handle_scope, config.get_trace);
         let scope = &mut v8::ContextScope::new(handle_scope, context);
         install_native_functions(scope, context)?;
+        let surface_manifest: serde_json::Value = serde_json::from_str(include_str!(
+            "../../../manifests/chrome150.runtime-surface.json"
+        ))
+        .map_err(|error| V8Error::ResultDecode(error.to_string()))?;
+        let runtime_member_count = surface_manifest["interfaces"]
+            .as_array()
+            .map(|interfaces| {
+                interfaces
+                    .iter()
+                    .map(|interface| interface["members"].as_array().map_or(0, Vec::len))
+                    .sum::<usize>()
+            })
+            .unwrap_or_default();
+        if surface_manifest["baseline_id"] != yatou_surface::GENERATED_BASELINE_ID
+            || runtime_member_count != yatou_surface::GENERATED_MEMBERS.len()
+        {
+            return Err(V8Error::ResultDecode(
+                "runtime surface and generated Rust table disagree".to_owned(),
+            ));
+        }
         let bootstrap_config = serde_json::json!({
             "profile": config.profile,
             "url": config.url,
@@ -1482,6 +1828,7 @@ fn runtime_worker(
             "random_seed": config.random_seed,
             "get_trace": config.get_trace,
             "baseline": "win11-chrome150.0.7871.188-headful-m2-v2",
+            "surface_manifest": surface_manifest,
         });
         let bootstrap_config = serde_json::to_string(&bootstrap_config)
             .map_err(|error| V8Error::ResultDecode(error.to_string()))?;
@@ -1490,10 +1837,11 @@ fn runtime_worker(
             include_str!("browser_host.js")
         );
         execute_to_string(scope, &bootstrap)?;
-        Ok(v8::Global::new(scope, context))
+        let bridge = capture_runtime_bridge(scope, context)?;
+        Ok((v8::Global::new(scope, context), bridge))
     })();
-    let context = match setup {
-        Ok(context) => context,
+    let (context, bridge) = match setup {
+        Ok(handles) => handles,
         Err(error) => {
             let _ = ready.send(Err(error.to_string()));
             return;
@@ -1518,12 +1866,12 @@ fn runtime_worker(
                     v8::scope!(let handle_scope, &mut isolate);
                     let local_context = v8::Local::new(handle_scope, &context);
                     let scope = &mut v8::ContextScope::new(handle_scope, local_context);
-                    let result =
-                        evaluate_session_source(scope, &source).map_err(|e| e.to_string())?;
-                    set_get_trace_active(scope, true).map_err(|e| e.to_string())?;
+                    let result = evaluate_session_source(scope, &bridge, &source)
+                        .map_err(|e| e.to_string())?;
+                    set_get_trace_active(scope, &bridge, true).map_err(|e| e.to_string())?;
                     scope.perform_microtask_checkpoint();
-                    set_get_trace_active(scope, false).map_err(|e| e.to_string())?;
-                    let host = take_host_observations(scope)?;
+                    set_get_trace_active(scope, &bridge, false).map_err(|e| e.to_string())?;
+                    let host = take_host_observations(scope, &bridge)?;
                     let native = take_observations();
                     trace
                         .observations(Some(parent), native, host)
@@ -1542,7 +1890,9 @@ fn runtime_worker(
                     v8::scope!(let handle_scope, &mut isolate);
                     let local_context = v8::Local::new(handle_scope, &context);
                     let scope = &mut v8::ContextScope::new(handle_scope, local_context);
-                    execute_to_string(scope, &format!("__yatouInstallResource({resource}); 'ok'"))
+                    let value = execute_value(scope, &format!("({resource})"))
+                        .map_err(|error| error.to_string())?;
+                    call_runtime_bridge(scope, &bridge, "__yatouInstallResource", &[value])
                         .map_err(|error| error.to_string())?;
                     Ok(())
                 })();
@@ -1553,21 +1903,14 @@ fn runtime_worker(
                     v8::scope!(let handle_scope, &mut isolate);
                     let local_context = v8::Local::new(handle_scope, &context);
                     let scope = &mut v8::ContextScope::new(handle_scope, local_context);
-                    let result = execute_to_string(
-                        scope,
-                        &format!(
-                            "JSON.stringify((() => {{ \
-                                __yatouSetGetTraceActive(true); \
-                                try {{ return __yatouDrain({limit}); }} \
-                                finally {{ __yatouSetGetTraceActive(false); }} \
-                            }})())"
-                        ),
-                    )
-                    .map_err(|error| error.to_string())?;
-                    set_get_trace_active(scope, true).map_err(|e| e.to_string())?;
+                    set_get_trace_active(scope, &bridge, true).map_err(|e| e.to_string())?;
+                    let limit: v8::Local<v8::Value> =
+                        v8::Integer::new_from_unsigned(scope, limit).into();
+                    let result = bridge_json(scope, &bridge, "__yatouDrain", &[limit])
+                        .map_err(|error| error.to_string())?;
                     scope.perform_microtask_checkpoint();
-                    set_get_trace_active(scope, false).map_err(|e| e.to_string())?;
-                    let host = take_host_observations(scope)?;
+                    set_get_trace_active(scope, &bridge, false).map_err(|e| e.to_string())?;
+                    let host = take_host_observations(scope, &bridge)?;
                     let native = take_observations();
                     trace
                         .observations(None, native, host)
@@ -1585,9 +1928,68 @@ fn runtime_worker(
                     v8::scope!(let handle_scope, &mut isolate);
                     let local_context = v8::Local::new(handle_scope, &context);
                     let scope = &mut v8::ContextScope::new(handle_scope, local_context);
-                    let json =
-                        execute_to_string(scope, "JSON.stringify(globalThis.__yatouEnvironment)")
+                    let local_bridge = v8::Local::new(scope, &bridge);
+                    let environment = bridge_member(scope, local_bridge, "__yatouEnvironment")
+                        .ok_or_else(|| "runtime environment bridge is missing".to_owned())?;
+                    let json = v8::json::stringify(scope, environment)
+                        .ok_or_else(|| "runtime environment serialization failed".to_owned())?
+                        .to_rust_string_lossy(scope);
+                    serde_json::from_str(&json).map_err(|error| error.to_string())
+                })();
+                let _ = reply.send(response);
+            }
+            RuntimeCommand::ImportCookies { cookies, reply } => {
+                let response = (|| -> Result<u64, String> {
+                    let cookies = serde_json::to_string(&cookies).map_err(|e| e.to_string())?;
+                    v8::scope!(let handle_scope, &mut isolate);
+                    let local_context = v8::Local::new(handle_scope, &context);
+                    let scope = &mut v8::ContextScope::new(handle_scope, local_context);
+                    let value = execute_value(scope, &format!("({cookies})"))
+                        .map_err(|error| error.to_string())?;
+                    let result =
+                        call_runtime_bridge(scope, &bridge, "__yatouImportCookies", &[value])
                             .map_err(|error| error.to_string())?;
+                    result
+                        .integer_value(scope)
+                        .map(|value| u64::try_from(value).unwrap_or_default())
+                        .ok_or_else(|| "cookie import did not return a count".to_owned())
+                })();
+                let _ = reply.send(response);
+            }
+            RuntimeCommand::ExportCookies { reply } => {
+                let response = (|| -> Result<serde_json::Value, String> {
+                    v8::scope!(let handle_scope, &mut isolate);
+                    let local_context = v8::Local::new(handle_scope, &context);
+                    let scope = &mut v8::ContextScope::new(handle_scope, local_context);
+                    let json = bridge_json(scope, &bridge, "__yatouExportCookies", &[])
+                        .map_err(|error| error.to_string())?;
+                    serde_json::from_str(&json).map_err(|error| error.to_string())
+                })();
+                let _ = reply.send(response);
+            }
+            RuntimeCommand::Navigation { take, reply } => {
+                let response = (|| -> Result<serde_json::Value, String> {
+                    v8::scope!(let handle_scope, &mut isolate);
+                    let local_context = v8::Local::new(handle_scope, &context);
+                    let scope = &mut v8::ContextScope::new(handle_scope, local_context);
+                    let member = if take {
+                        "__yatouTakeNavigation"
+                    } else {
+                        "__yatouPeekNavigation"
+                    };
+                    let json = bridge_json(scope, &bridge, member, &[])
+                        .map_err(|error| error.to_string())?;
+                    serde_json::from_str(&json).map_err(|error| error.to_string())
+                })();
+                let _ = reply.send(response);
+            }
+            RuntimeCommand::TraceStats { reply } => {
+                let response = (|| -> Result<serde_json::Value, String> {
+                    v8::scope!(let handle_scope, &mut isolate);
+                    let local_context = v8::Local::new(handle_scope, &context);
+                    let scope = &mut v8::ContextScope::new(handle_scope, local_context);
+                    let json = bridge_json(scope, &bridge, "__yatouGetTraceStats", &[])
+                        .map_err(|error| error.to_string())?;
                     serde_json::from_str(&json).map_err(|error| error.to_string())
                 })();
                 let _ = reply.send(response);
@@ -1600,61 +2002,79 @@ fn runtime_worker(
     }
 }
 
-fn evaluate_session_source(scope: &mut v8::PinScope, source: &str) -> Result<EvalResult, V8Error> {
-    let source =
-        serde_json::to_string(source).map_err(|error| V8Error::ResultDecode(error.to_string()))?;
-    let wrapper = format!(
-        r#"JSON.stringify((() => {{
-            const setGetTraceActive = globalThis.__yatouSetGetTraceActive;
+fn evaluate_session_source(
+    scope: &mut v8::PinScope,
+    bridge: &v8::Global<v8::Object>,
+    source: &str,
+) -> Result<EvalResult, V8Error> {
+    let wrapper = r#"(function (setGetTraceActive, source) {
             const indirectEval = eval;
-            try {{
+            try {
                 let value;
                 setGetTraceActive(true);
-                try {{
-                    value = (0, indirectEval)({source});
-                }} finally {{
+                try {
+                    value = (0, indirectEval)(source);
+                } finally {
                     setGetTraceActive(false);
-                }}
+                }
                 let json = null;
-                try {{
+                try {
                     const encoded = JSON.stringify(value);
                     if (encoded !== undefined) json = encoded;
-                }} catch (_error) {{}}
+                } catch (_error) {}
                 let display;
-                try {{ display = String(value); }} catch (_error) {{ display = "<unprintable>"; }}
-                return {{
+                try { display = String(value); } catch (_error) { display = "<unprintable>"; }
+                return JSON.stringify({
                     ok: true,
                     kind: value === null ? "null" : typeof value,
                     display: display.length > 4096 ? display.slice(0, 4096) : display,
                     json,
                     exception_name: null,
                     exception_message: null
-                }};
-            }} catch (error) {{
+                });
+            } catch (error) {
                 setGetTraceActive(false);
-                return {{
+                return JSON.stringify({
                     ok: false,
                     kind: "undefined",
                     display: "undefined",
                     json: null,
                     exception_name: String(error && error.name || "Error"),
                     exception_message: String(error && error.message || error)
-                }};
-            }}
-        }})())"#
-    );
-    let result = execute_to_string(scope, &wrapper)?;
+                });
+            }
+        })"#;
+    let function = execute_value(scope, wrapper).and_then(|value| {
+        v8::Local::<v8::Function>::try_from(value).map_err(|_| V8Error::ResultConversion)
+    })?;
+    let local_bridge = v8::Local::new(scope, bridge);
+    let setter = bridge_member(scope, local_bridge, "__yatouSetGetTraceActive")
+        .ok_or(V8Error::NativeInstallation("runtime trace switch"))?;
+    let source = v8::String::new(scope, source).ok_or(V8Error::SourceAllocation)?;
+    let receiver: v8::Local<v8::Value> = v8::undefined(scope).into();
+    let result = function
+        .call(scope, receiver, &[setter, source.into()])
+        .ok_or_else(|| V8Error::Execution("session evaluation wrapper failed".to_owned()))?;
+    let result = result.to_string(scope).ok_or(V8Error::ResultConversion)?;
+    let result = result.to_rust_string_lossy(scope);
     serde_json::from_str(&result).map_err(|error| V8Error::ResultDecode(error.to_string()))
 }
 
-fn set_get_trace_active(scope: &mut v8::PinScope, active: bool) -> Result<(), V8Error> {
-    let active = if active { "true" } else { "false" };
-    execute_to_string(scope, &format!("__yatouSetGetTraceActive({active}); 'ok'"))?;
+fn set_get_trace_active(
+    scope: &mut v8::PinScope,
+    bridge: &v8::Global<v8::Object>,
+    active: bool,
+) -> Result<(), V8Error> {
+    let active: v8::Local<v8::Value> = v8::Boolean::new(scope, active).into();
+    let _ = call_runtime_bridge(scope, bridge, "__yatouSetGetTraceActive", &[active])?;
     Ok(())
 }
 
-fn take_host_observations(scope: &mut v8::PinScope) -> Result<Vec<HostObservation>, String> {
-    let json = execute_to_string(scope, "JSON.stringify(globalThis.__yatouTakeHostLog())")
-        .map_err(|error| error.to_string())?;
+fn take_host_observations(
+    scope: &mut v8::PinScope,
+    bridge: &v8::Global<v8::Object>,
+) -> Result<Vec<HostObservation>, String> {
+    let json =
+        bridge_json(scope, bridge, "__yatouTakeHostLog", &[]).map_err(|error| error.to_string())?;
     serde_json::from_str(&json).map_err(|error| error.to_string())
 }

@@ -187,7 +187,7 @@ class RuntimeTests(unittest.TestCase):
                     ("Document.prototype", "cookie"),
                     ("Location.prototype", "href"),
                     ("Performance.prototype", "timeOrigin"),
-                    ("Element.prototype", "getContext"),
+                    ("HTMLCanvasElement.prototype", "getContext"),
                     ("Element.prototype", "clientWidth"),
                     ("globalThis", "DefinitelyMissingChromeSurface"),
                 }.issubset(set(gets))
@@ -305,6 +305,97 @@ class RuntimeTests(unittest.TestCase):
             with concurrent.futures.ThreadPoolExecutor(max_workers=8) as pool:
                 list(pool.map(lambda _: runtime.eval("++concurrentCounter"), range(32)))
             self.assertEqual(runtime.eval("concurrentCounter"), 32)
+
+    def test_generated_chrome_surface_is_installed_without_internal_leaks(self) -> None:
+        with yatouv8.Runtime() as runtime:
+            result = runtime.eval(
+                """
+                (() => {
+                    const globals = Object.getOwnPropertyNames(globalThis);
+                    return {
+                        count: globals.length,
+                        internals: globals.filter(key =>
+                            key.startsWith("__yatou") || key === "_listeners"
+                        ),
+                        navigatorKeys: Reflect.ownKeys(Navigator.prototype).length,
+                        brands: [navigator, screen, location, performance, document]
+                            .map(value => Object.prototype.toString.call(value)),
+                        nativeNode: Function.prototype.toString.call(Node)
+                            .includes("[native code]"),
+                        nativeAppend: Function.prototype.toString.call(
+                            Node.prototype.appendChild,
+                        ).includes("[native code]"),
+                    };
+                })()
+                """
+            )
+            self.assertEqual(result["count"], 981)
+            self.assertEqual(result["internals"], [])
+            self.assertEqual(result["navigatorKeys"], 37)
+            self.assertEqual(
+                result["brands"],
+                [
+                    "[object Navigator]",
+                    "[object Screen]",
+                    "[object Location]",
+                    "[object Performance]",
+                    "[object Document]",
+                ],
+            )
+            self.assertTrue(result["nativeNode"])
+            self.assertTrue(result["nativeAppend"])
+
+    def test_reflection_trace_records_structure_operations(self) -> None:
+        config = yatouv8.RuntimeConfig(
+            get_trace=yatouv8.GetTraceConfig(enabled=True, max_events=10_000)
+        )
+        with yatouv8.Runtime(config) as runtime:
+            runtime.eval(
+                "Object.getOwnPropertyNames(globalThis);"
+                "Reflect.ownKeys(Navigator.prototype);"
+                "Object.getOwnPropertyDescriptors(Navigator.prototype);"
+                "Object.getPrototypeOf(navigator);"
+                "Reflect.has(navigator, 'webdriver');"
+                "'ok'"
+            )
+            operations = {
+                event["entry"]["operation"]
+                for event in runtime.trace["events"]
+                if event["level"] == "l1"
+            }
+            self.assertTrue(
+                {
+                    "own_keys",
+                    "get_own_property_descriptor",
+                    "get_prototype_of",
+                    "has",
+                }.issubset(operations)
+            )
+            self.assertEqual(runtime.get_trace_stats["dropped"], 0)
+
+    def test_recorded_clock_cookie_navigation_and_challenge_handoff(self) -> None:
+        config = yatouv8.RuntimeConfig(
+            url="https://www.google.com/search?q=yatouv8",
+            get_trace=yatouv8.GetTraceConfig(enabled=True, max_events=20_000),
+        )
+        with yatouv8.Runtime(config) as runtime:
+            runtime.import_cookies({"seed": "one"})
+            result = runtime.eval_challenge(
+                "const samples=Array.from({length:800},()=>performance.now());"
+                "document.cookie='SG_SS=fixture-token; Path=/; Secure; SameSite=None';"
+                "location.replace('/search?q=yatouv8&sei=fixture-sei');"
+                "({unique:new Set(samples).size,repeated:samples.some((v,i)=>i&&v===samples[i-1])})"
+            )
+            self.assertTrue(result.value["repeated"])
+            self.assertLess(result.value["unique"], 100)
+            self.assertTrue(any(cookie["name"] == "SG_SS" for cookie in result.cookies))
+            self.assertEqual(result.pending_navigation["kind"], "replace")
+            self.assertEqual(
+                result.pending_navigation["url"],
+                "https://www.google.com/search?q=yatouv8&sei=fixture-sei",
+            )
+            self.assertEqual(runtime.take_navigation(), result.pending_navigation)
+            self.assertIsNone(runtime.pending_navigation)
 
 
 if __name__ == "__main__":

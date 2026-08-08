@@ -13,3 +13,6 @@
   concurrency, exception-recovery, and cleanup gates.
 - Added opt-in bounded GET tracing for global/browser-host/native Trusted Types
   properties with causal ordering across JS host and Rust native observations.
+- Added SG_SS-oriented reflection tracing, private runtime bridges, generated
+  runtime-surface installation, recorded Chrome clock replay, structured Cookie/
+  navigation handoff, and local final acceptance gates.

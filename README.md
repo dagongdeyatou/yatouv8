@@ -3,7 +3,8 @@
 > 当前状态：M0–M10 已完成，发布版本 `0.1.0`。已验证一条**公开归档的真实
 > Google reCAPTCHA BotGuard VM** 路径、Chrome 150 的 M8 宿主语义，以及
 > 2026-08-07 当前公开 Google/recaptcha.net loader。当前在线 challenge 与私有
-> BotGuard bytecode 仍不在完成声明内。
+> BotGuard bytecode 仍不在完成声明内。SG_SS 定向本地门禁已达到 1,785/1,785
+> descriptor、2,169/2,169 callable metadata 和 0 failure。
 
 `yatouv8` 是面向 Windows 11 + Chrome 150 的证据驱动型 V8 浏览器宿主：先采集 Chrome 行为，再通过差异、因果 blocker、Manifest 和生成器收敛兼容层。
 
@@ -80,6 +81,24 @@ with yatouv8.Runtime(config) as runtime:
 因此 trace 保留真实因果顺序。诊断默认关闭；`max_events` 是每个 Runtime 的硬上限。
 详细合同见 [GET tracing](docs/evidence/get-tracing.md)。
 
+执行提取出的 SG_SS challenge，并把 Cookie/导航交回同一个 HTTP session：
+
+```python
+import yatouv8
+
+config = yatouv8.RuntimeConfig(
+    url="https://www.google.com/search?q=fixture",
+    get_trace=yatouv8.GetTraceConfig(enabled=True, max_events=50_000),
+)
+with yatouv8.Runtime(config) as runtime:
+    runtime.import_cookies(session.cookies)
+    result = runtime.eval_challenge(challenge_source)
+    runtime.export_cookies(session)
+    next_hop = runtime.take_navigation()
+```
+
+`result` 同时返回 value、cookies、pending navigation、drain 结果与 trace stats。
+
 ## 构建 V8 smoke test
 
 前置条件：
@@ -131,7 +150,8 @@ M3 的边界与验证结果见 [M3 Trace spine](docs/evidence/m3-trace-spine.md)
 python tools/surface-codegen/generate.py `
   --snapshot .yatou/evidence/baselines/win11-chrome150.0.7871.188-headful-m2-v2/runs/20260807T114946.259886Z-02b44a1e/snapshot.json `
   --manifest manifests/chrome150.surface.json `
-  --rust crates/yatou-surface/src/generated/chrome150.rs
+  --rust crates/yatou-surface/src/generated/chrome150.rs `
+  --runtime manifests/chrome150.runtime-surface.json
 ```
 
 本机已有固定 SHA 的 `InsideReCaptcha/model.js` 与 `enc` 后，重现 M6：
@@ -146,6 +166,7 @@ python tools/surface-codegen/generate.py `
 .\scripts\run-m8.ps1
 .\scripts\run-m9.ps1
 .\scripts\run-m10.ps1
+.\scripts\run-sgss-acceptance.ps1
 ```
 
 ## 工程结构
@@ -192,6 +213,7 @@ tools/
 - [M8 Host conformance](docs/evidence/m8-host-conformance.md)
 - [M9 当前公开 loader corpus](docs/evidence/m9-current-loader-corpus.md)
 - [M10 发布与终态门禁](docs/evidence/m10-release.md)
+- [SG_SS 定向兼容与最终本地验收](docs/evidence/sgss-readiness.md)
 
 ## 许可证
 

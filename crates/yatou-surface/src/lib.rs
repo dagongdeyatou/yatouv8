@@ -4,8 +4,7 @@ use std::collections::BTreeSet;
 
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
-use yatou_core::{TraceRecorder, TraceRuntimeError};
-use yatou_schema::{ApiLedgerEvent, ApiOperation, ApiOutcome, EvidenceRef, ValueSummary};
+use yatou_schema::{ApiOperation, ApiOutcome, EvidenceRef, ValueSummary};
 
 /// Current Surface Manifest schema version.
 pub const SURFACE_MANIFEST_VERSION: u32 = 1;
@@ -268,55 +267,11 @@ pub trait SurfaceHandler {
     fn dispatch(&mut self, invocation: &SurfaceInvocation) -> ApiOutcome;
 }
 
-/// Invoke handwritten semantics and append the corresponding L1 ledger event.
-///
-/// # Errors
-///
-/// Returns [`TraceRuntimeError`] if recording would violate trace ordering.
-pub fn dispatch_with_l1<H: SurfaceHandler>(
-    handler: &mut H,
-    recorder: &mut TraceRecorder,
-    logical_time_ns: u64,
-    parent_seq: Option<u64>,
-    invocation: SurfaceInvocation,
-) -> Result<ApiOutcome, TraceRuntimeError> {
-    let outcome = handler.dispatch(&invocation);
-    recorder.record_l1(
-        logical_time_ns,
-        parent_seq,
-        ApiLedgerEvent {
-            operation: invocation.operation,
-            target: invocation.target,
-            member: invocation.member,
-            arguments: invocation.arguments,
-            outcome: outcome.clone(),
-            call_site: None,
-        },
-    )?;
-    Ok(outcome)
-}
-
 include!("generated/chrome150.rs");
 
 #[cfg(test)]
 mod tests {
-    use yatou_schema::{BaselineId, CURRENT_SCHEMA_VERSION, JsValueKind, TraceHeader, TraceSource};
-
     use super::*;
-
-    struct Echo;
-
-    impl SurfaceHandler for Echo {
-        fn dispatch(&mut self, _invocation: &SurfaceInvocation) -> ApiOutcome {
-            ApiOutcome::Return {
-                value: ValueSummary {
-                    kind: JsValueKind::Boolean,
-                    preview: Some("true".to_owned()),
-                    sha256: None,
-                },
-            }
-        }
-    }
 
     #[test]
     fn generated_surface_has_expected_baseline_shape() {
@@ -328,35 +283,5 @@ mod tests {
         assert_eq!(GENERATED_MEMBERS.len(), 1_785);
         assert_eq!(GENERATED_INTERFACES[0].path, "globalThis");
         assert_eq!(GENERATED_INTERFACES[0].member_len, 981);
-    }
-
-    #[test]
-    fn shared_trampoline_records_l1_outcome() {
-        let header = TraceHeader {
-            schema_version: CURRENT_SCHEMA_VERSION,
-            trace_id: "surface-trampoline".to_owned(),
-            baseline_id: BaselineId::parse("chrome150").expect("baseline"),
-            source: TraceSource::Fixture,
-            created_at: "2026-08-07T00:00:00Z".to_owned(),
-            producer: "test".to_owned(),
-        };
-        let mut recorder = TraceRecorder::new(header);
-        let outcome = dispatch_with_l1(
-            &mut Echo,
-            &mut recorder,
-            0,
-            None,
-            SurfaceInvocation {
-                handler_id: "performance.now".to_owned(),
-                operation: ApiOperation::Call,
-                target: "Performance.prototype".to_owned(),
-                member: Some("now".to_owned()),
-                arguments: Vec::new(),
-            },
-        )
-        .expect("dispatch");
-        assert!(matches!(outcome, ApiOutcome::Return { .. }));
-        let stream = recorder.finish().expect("trace");
-        assert_eq!(stream.footer.l1_count, 1);
     }
 }

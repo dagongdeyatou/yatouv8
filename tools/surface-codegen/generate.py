@@ -186,6 +186,37 @@ def render_rust(manifest: dict[str, Any]) -> str:
     return "\n".join(lines)
 
 
+def runtime_manifest(manifest: dict[str, Any]) -> dict[str, Any]:
+    """Strip evidence payloads while retaining every runtime descriptor field."""
+
+    interfaces = []
+    for interface in manifest["interfaces"]:
+        members = []
+        for member in interface["members"]:
+            members.append(
+                {
+                    "k": member["key"],
+                    "d": member["descriptor_kind"],
+                    "c": member["configurable"],
+                    "e": member["enumerable"],
+                    "w": member["writable"],
+                    "t": member["value_type"],
+                    "f": member["callable"],
+                    "g": member["getter"],
+                    "s": member["setter"],
+                }
+            )
+        interfaces.append(
+            {
+                "path": interface["path"],
+                "prototype_path": interface["prototype_path"],
+                "value_type": interface["value_type"],
+                "members": members,
+            }
+        )
+    return {"baseline_id": manifest["baseline_id"], "interfaces": interfaces}
+
+
 def canonical_json(value: Any) -> str:
     return json.dumps(value, ensure_ascii=False, indent=2, sort_keys=True) + "\n"
 
@@ -202,6 +233,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--snapshot", type=Path, required=True)
     parser.add_argument("--manifest", type=Path, required=True)
     parser.add_argument("--rust", type=Path, required=True)
+    parser.add_argument("--runtime", type=Path)
     return parser.parse_args()
 
 
@@ -210,6 +242,8 @@ def main() -> int:
     manifest = derive_manifest(args.snapshot)
     write_if_changed(args.manifest, canonical_json(manifest))
     write_if_changed(args.rust, render_rust(manifest))
+    if args.runtime is not None:
+        write_if_changed(args.runtime, canonical_json(runtime_manifest(manifest)))
     print(
         json.dumps(
             {
@@ -222,6 +256,7 @@ def main() -> int:
                 ),
                 "manifest": str(args.manifest),
                 "rust": str(args.rust),
+                "runtime": str(args.runtime) if args.runtime is not None else None,
             },
             ensure_ascii=False,
         )
