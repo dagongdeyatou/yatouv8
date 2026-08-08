@@ -68,15 +68,38 @@ state lookup，使 trace 开关不再改变 Canvas/DOM 语义。
 `knitsail.createSnapshot` 后会记录为该路径，而不再误记为
 `Object.prototype.createSnapshot`。
 
+## Window `EventTarget` P0 修复
+
+目标 trace 在 trustedTypes 之后首先读取 `globalThis.addEventListener`，安装态
+复现确认旧实现返回 `undefined`。根因不是方法没有实现，而是 Chrome 的真实原型链
+包含一个匿名层：
+
+```text
+globalThis → Window.prototype → [object WindowProperties]
+           → EventTarget.prototype → Object.prototype
+```
+
+首版 surface manifest 只保存命名接口，漏掉了 `WindowProperties`，随后全局 surface
+reconciliation 又删除了临时安装在 globalThis 上的三个 own method，最终导致
+`addEventListener/removeEventListener/dispatchEvent` 不可见。本轮补入与 Chrome 150
+descriptor 完全一致的 `WindowProperties` 原型桥，并保留方法从
+`EventTarget.prototype` 继承，而不是在 globalThis 上伪造 own property。
+
+同时对调用语义做了 Chrome 差分：bare call、`globalThis.method()`、提取函数后调用、
+`call(undefined)` 均工作；以普通对象为 receiver 时抛出 `TypeError: Illegal invocation`。
+GET tracing 下函数身份保持不变，事件 [30] 现在返回 `function:addEventListener`，随后
+CALL 记录归属 `EventTarget.prototype.addEventListener`。`globalThis.global` 在 Chrome
+150 中确实为 `undefined`，因此没有增加 Node 风格别名。
+
 ## 验证结果
 
 | 门禁 | 结果 |
 | --- | --- |
 | Chrome 150 vs yatouv8 候选 probe | 0 个归一化差异 |
-| Chrome 150 vs iv8_rs 候选 probe | 145 个归一化差异；主要包含 iv8_rs 的 WebGL 对象等非 Chrome 基线行为 |
+| Chrome 150 vs iv8_rs 候选 probe | 146 个归一化差异；主要包含 iv8_rs 的 WebGL 对象等非 Chrome 基线行为 |
 | Runtime descriptor | 12,841 / 12,841 |
 | Callable metadata | 9,565 / 9,565 |
-| Python wheel tests | 16 / 16 |
+| Python wheel tests | 17 / 17 |
 | M8 host conformance | conformant，Chrome/yatouv8 哈希一致 |
 | M10 release gate | accepted |
 
@@ -84,7 +107,7 @@ state lookup，使 trace 开关不再改变 Canvas/DOM 语义。
 
 ```text
 C:\Users\wuye\Documents\yatouv8\dist\yatouv8-0.1.0-cp313-cp313-win_amd64.whl
-SHA256 c9e9f6528309cd77cf4751e04a1a4b7dc3023b1e1ea359d299430b2a95e23f55
+SHA256 634e56039e79350a39590b28758207a25dc79d3ea8002cf112763530d3b33b4e
 ```
 
 ## 复现
@@ -105,8 +128,10 @@ python -m pip install --force-reinstall --no-deps `
 ```text
 C:\Users\wuye\Documents\yatouv8\.yatou\evidence\semantic-conformance\report.json
 C:\Users\wuye\Documents\yatouv8\.yatou\evidence\semantic-conformance\chrome-loaded-page-timing-5.json
+C:\Users\wuye\Documents\yatouv8\.yatou\evidence\window-event-target-focused\chrome.json
+C:\Users\wuye\Documents\yatouv8\.yatou\evidence\window-event-target-focused\call-semantics-chrome.json
 C:\Users\wuye\Documents\yatouv8\.yatou\evidence\local-semantic\timing-knitsail-probe.json
-C:\Users\wuye\Documents\yatouv8\.yatou\evidence\reports\m10\runs\20260808T093329.657776Z-a55dc481\m10.report.json
+C:\Users\wuye\Documents\yatouv8\.yatou\evidence\reports\m10\runs\20260808T141147.265506Z-7fa64e29\m10.report.json
 ```
 
 ## 下一项因果验收

@@ -38,6 +38,12 @@
       userAgentData: typeof navigator.userAgentData,
       navigatorOwnKeys: keys(navigator),
       screenOwnKeys: keys(screen),
+      addEventListener: typeof globalThis.addEventListener,
+      removeEventListener: typeof globalThis.removeEventListener,
+      dispatchEvent: typeof globalThis.dispatchEvent,
+      globalAlias: typeof globalThis.global,
+      eventTargetPrototype: EventTarget.prototype.isPrototypeOf(globalThis),
+      windowPropertiesTag: tag(Object.getPrototypeOf(Window.prototype)),
     },
     chrome: {
       appKeys: keys(chrome.app),

@@ -387,6 +387,13 @@
     member = stringValue(member);
     logGet("globalThis", member, outcome, !!threw);
     if (member === "eval") return outcome;
+    // These inherited Window functions already emit their own L1 CALL events.
+    // Returning a diagnostic Proxy here would break Chrome's identity contract:
+    // window.addEventListener === EventTarget.prototype.addEventListener.
+    if ((member === "addEventListener"
+      || member === "removeEventListener"
+      || member === "dispatchEvent")
+      && outcome === EventTarget.prototype[member]) return outcome;
     return observeTraceValue(
       outcome,
       member === "trustedTypes" ? "TrustedTypePolicyFactory.prototype" : member
@@ -479,6 +486,13 @@
   }
 
   const eventTargetState = new WeakMapIntrinsic();
+  const eventTargetReceiver = receiver => {
+    receiver = rawTraceValue(receiver);
+    if (receiver == null) return globalObject;
+    if (receiver === globalObject
+      || ObjectIntrinsic.prototype.isPrototypeOf.call(EventTarget.prototype, receiver)) return receiver;
+    throw new TypeErrorIntrinsic("Illegal invocation");
+  };
   const listenersFor = target => {
     let listeners = stateFor(eventTargetState, target);
     if (!listeners) { listeners = new MapIntrinsic(); eventTargetState.set(target, listeners); }
@@ -491,7 +505,7 @@
       type = stringValue(type);
       logApi("EventTarget.prototype", "addEventListener", "call", [type, callback, options], undefined);
       if (callback == null) return;
-      const listeners = listenersFor(this);
+      const listeners = listenersFor(eventTargetReceiver(this));
       const entries = listeners.get(type) || [];
       const capture = typeof options === "object" ? booleanValue(options.capture) : booleanValue(options);
       if (!entries.some(entry => entry.callback === callback && entry.capture === capture))
@@ -502,21 +516,24 @@
       type = stringValue(type);
       logApi("EventTarget.prototype", "removeEventListener", "call", [type, callback, options], undefined);
       const capture = typeof options === "object" ? booleanValue(options.capture) : booleanValue(options);
-      const listeners = listenersFor(this);
+      const listeners = listenersFor(eventTargetReceiver(this));
       const entries = listeners.get(type) || [];
       listeners.set(type, entries.filter(entry => entry.callback !== callback || entry.capture !== capture));
     }
     dispatchEvent(event) {
       if (!(event instanceof Event)) throw new TypeErrorIntrinsic("parameter 1 is not of type 'Event'");
       logApi("EventTarget.prototype", "dispatchEvent", "call", [event], true);
+      const receiver = eventTargetReceiver(this);
       const state = eventData(event);
-      if (!state.target) state.target = this;
-      state.currentTarget = this;
+      if (!state.target) state.target = receiver;
+      state.currentTarget = receiver;
       state.eventPhase = Event.AT_TARGET;
-      const entries = ArrayIntrinsic.from(listenersFor(this).get(event.type) || []);
+      const entries = ArrayIntrinsic.from(listenersFor(receiver).get(event.type) || []);
       for (const entry of entries) {
-        if (entry.once) this.removeEventListener(event.type, entry.callback, { capture: entry.capture });
-        if (typeof entry.callback === "function") entry.callback.call(this, event);
+        if (entry.once) EventTarget.prototype.removeEventListener.call(
+          receiver, event.type, entry.callback, { capture: entry.capture }
+        );
+        if (typeof entry.callback === "function") entry.callback.call(receiver, event);
         else if (entry.callback && typeof entry.callback.handleEvent === "function") entry.callback.handleEvent(event);
         if (state.immediateStopped) break;
       }
@@ -2053,6 +2070,24 @@
     if (objectLike(object) && objectLike(prototype)) {
       try { ReflectIntrinsic.setPrototypeOf(object, prototype); } catch (_error) {}
     }
+  }
+  // Window has one anonymous prototype layer that the named-interface manifest
+  // cannot represent: Window.prototype -> [object WindowProperties] ->
+  // EventTarget.prototype. Without this bridge the global EventTarget methods
+  // installed above are deleted during exact global-surface reconciliation and
+  // `globalThis.addEventListener` incorrectly becomes undefined.
+  const windowPrototype = surfaceObjects.get("Window.prototype");
+  const eventTargetPrototype = surfaceObjects.get("EventTarget.prototype");
+  if (objectLike(windowPrototype) && objectLike(eventTargetPrototype)) {
+    const windowPropertiesPrototype = ObjectIntrinsic.create(eventTargetPrototype);
+    ObjectIntrinsic.defineProperty(windowPropertiesPrototype, Symbol.toStringTag, {
+      value: "WindowProperties",
+      writable: false,
+      enumerable: false,
+      configurable: true
+    });
+    ReflectIntrinsic.setPrototypeOf(windowPrototype, windowPropertiesPrototype);
+    registerTraceTarget(windowPropertiesPrototype, "WindowProperties.prototype");
   }
   const bindInstance = (value, name, migrateOwn = true) => {
     const prototype = surfaceObjects.get(`${name}.prototype`);

@@ -69,6 +69,106 @@ class RuntimeTests(unittest.TestCase):
             self.assertGreater(trace["footer"]["event_count"], 0)
             self.assertFalse(runtime.environment["networkFallback"])
 
+    def test_window_inherits_chrome_event_target_surface(self) -> None:
+        config = yatouv8.RuntimeConfig(
+            get_trace=yatouv8.GetTraceConfig(enabled=True, max_events=200)
+        )
+        with yatouv8.Runtime(config) as runtime:
+            result = runtime.eval(
+                """
+                (() => {
+                    let calls = 0;
+                    const listener = event => {
+                        calls += event.type === "yatou-window-event" ? 1 : 100;
+                    };
+                    addEventListener("yatou-window-event", listener);
+                    const dispatched = dispatchEvent(new Event("yatou-window-event"));
+                    removeEventListener("yatou-window-event", listener);
+                    dispatchEvent(new Event("yatou-window-event"));
+                    const extractedAdd = globalThis.addEventListener;
+                    const extractedDispatch = globalThis.dispatchEvent;
+                    const extractedRemove = globalThis.removeEventListener;
+                    extractedAdd("yatou-window-extracted", listener);
+                    extractedDispatch(new Event("yatou-window-extracted"));
+                    extractedRemove("yatou-window-extracted", listener);
+                    let plainReceiverError = null;
+                    try {
+                        EventTarget.prototype.addEventListener.call(
+                            {},
+                            "yatou-illegal",
+                            listener,
+                        );
+                    } catch (error) {
+                        plainReceiverError = `${error.name}: ${error.message}`;
+                    }
+                    const windowProperties = Object.getPrototypeOf(Window.prototype);
+                    return {
+                        addType: typeof globalThis.addEventListener,
+                        removeType: typeof globalThis.removeEventListener,
+                        dispatchType: typeof globalThis.dispatchEvent,
+                        globalAliasType: typeof globalThis.global,
+                        ownAdd: Object.getOwnPropertyDescriptor(
+                            globalThis,
+                            "addEventListener",
+                        ) === undefined,
+                        sameFunction: globalThis.addEventListener
+                            === EventTarget.prototype.addEventListener,
+                        eventTargetPrototype: EventTarget.prototype.isPrototypeOf(window),
+                        windowPropertiesTag: Object.prototype.toString.call(
+                            windowProperties,
+                        ),
+                        windowPropertiesKeys: Reflect.ownKeys(windowProperties).map(String),
+                        windowPropertiesParent: Object.getPrototypeOf(windowProperties)
+                            === EventTarget.prototype,
+                        calls,
+                        dispatched,
+                        plainReceiverError,
+                    };
+                })()
+                """
+            )
+            l1 = [
+                event["entry"]
+                for event in runtime.trace["events"]
+                if event["level"] == "l1"
+            ]
+
+        self.assertEqual(
+            result,
+            {
+                "addType": "function",
+                "removeType": "function",
+                "dispatchType": "function",
+                "globalAliasType": "undefined",
+                "ownAdd": True,
+                "sameFunction": True,
+                "eventTargetPrototype": True,
+                "windowPropertiesTag": "[object WindowProperties]",
+                "windowPropertiesKeys": ["Symbol(Symbol.toStringTag)"],
+                "windowPropertiesParent": True,
+                "calls": 101,
+                "dispatched": True,
+                "plainReceiverError": "TypeError: Illegal invocation",
+            },
+        )
+        self.assertTrue(
+            any(
+                entry.get("operation") == "get"
+                and entry.get("target") == "globalThis"
+                and entry.get("member") == "addEventListener"
+                and entry["outcome"]["value"]["kind"] == "function"
+                for entry in l1
+            )
+        )
+        self.assertTrue(
+            any(
+                entry.get("operation") == "call"
+                and entry.get("target") == "EventTarget.prototype"
+                and entry.get("member") == "addEventListener"
+                for entry in l1
+            )
+        )
+
     def test_js_exception_does_not_destroy_context(self) -> None:
         with yatouv8.Runtime() as runtime:
             with self.assertRaises(yatouv8.JSException):
