@@ -64,6 +64,15 @@
     return value;
   };
   const rawTraceValue = value => traceRawValues.get(value) || value;
+  const stateFor = (store, value) => {
+    let state = store.get(value);
+    if (state) return state;
+    while (traceRawValues.has(value)) value = traceRawValues.get(value);
+    state = store.get(value);
+    if (state) return state;
+    const proxy = traceProxyCache.get(value);
+    return proxy ? store.get(proxy) : undefined;
+  };
   const semanticTraceTarget = value => {
     value = rawTraceValue(value);
     for (let current = value; objectLike(current); current = reflectGetPrototypeOfIntrinsic(current)) {
@@ -401,7 +410,7 @@
 
   const eventState = new WeakMapIntrinsic();
   const eventData = event => {
-    const state = eventState.get(event);
+    const state = stateFor(eventState, event);
     if (!state) throw new TypeErrorIntrinsic("Illegal invocation");
     return state;
   };
@@ -470,7 +479,7 @@
 
   const eventTargetState = new WeakMapIntrinsic();
   const listenersFor = target => {
-    let listeners = eventTargetState.get(target);
+    let listeners = stateFor(eventTargetState, target);
     if (!listeners) { listeners = new MapIntrinsic(); eventTargetState.set(target, listeners); }
     return listeners;
   };
@@ -516,9 +525,250 @@
     }
   }
 
+  const defineIndexedValue = (object, key, value, enumerable) =>
+    ObjectIntrinsic.defineProperty(object, key, {
+      value,
+      writable: false,
+      enumerable,
+      configurable: true
+    });
+
+  const pluginArrayState = new WeakMapIntrinsic();
+  const pluginState = new WeakMapIntrinsic();
+  const mimeTypeArrayState = new WeakMapIntrinsic();
+  const mimeTypeState = new WeakMapIntrinsic();
+  const indexedState = (store, receiver) => {
+    const state = stateFor(store, receiver);
+    if (!state) throw new TypeErrorIntrinsic("Illegal invocation");
+    return state;
+  };
+
+  class PluginArray {
+    constructor() { throw new TypeErrorIntrinsic("Illegal constructor"); }
+    get length() { return indexedState(pluginArrayState, this).items.length; }
+    item(index) { return indexedState(pluginArrayState, this).items[numberValue(index) >>> 0] || null; }
+    namedItem(name) { return indexedState(pluginArrayState, this).named.get(stringValue(name)) || null; }
+    refresh() {}
+    [Symbol.iterator]() { return indexedState(pluginArrayState, this).items.values(); }
+  }
+
+  class Plugin {
+    constructor() { throw new TypeErrorIntrinsic("Illegal constructor"); }
+    get name() { return indexedState(pluginState, this).name; }
+    get filename() { return indexedState(pluginState, this).filename; }
+    get description() { return indexedState(pluginState, this).description; }
+    get length() { return indexedState(pluginState, this).items.length; }
+    item(index) { return indexedState(pluginState, this).items[numberValue(index) >>> 0] || null; }
+    namedItem(name) { return indexedState(pluginState, this).named.get(stringValue(name)) || null; }
+    [Symbol.iterator]() { return indexedState(pluginState, this).items.values(); }
+  }
+
+  class MimeTypeArray {
+    constructor() { throw new TypeErrorIntrinsic("Illegal constructor"); }
+    get length() { return indexedState(mimeTypeArrayState, this).items.length; }
+    item(index) { return indexedState(mimeTypeArrayState, this).items[numberValue(index) >>> 0] || null; }
+    namedItem(name) { return indexedState(mimeTypeArrayState, this).named.get(stringValue(name)) || null; }
+    [Symbol.iterator]() { return indexedState(mimeTypeArrayState, this).items.values(); }
+  }
+
+  class MimeType {
+    constructor() { throw new TypeErrorIntrinsic("Illegal constructor"); }
+    get type() { return indexedState(mimeTypeState, this).type; }
+    get suffixes() { return indexedState(mimeTypeState, this).suffixes; }
+    get description() { return indexedState(mimeTypeState, this).description; }
+    get enabledPlugin() { return indexedState(mimeTypeState, this).enabledPlugin; }
+  }
+
+  const makeMimeType = (type, enabledPlugin = null) => {
+    const value = ObjectIntrinsic.create(MimeType.prototype);
+    mimeTypeState.set(value, {
+      type,
+      suffixes: "pdf",
+      description: "Portable Document Format",
+      enabledPlugin
+    });
+    return value;
+  };
+  const populateIndexed = (value, state, names) => {
+    state.items.forEach((item, index) => defineIndexedValue(value, stringValue(index), item, true));
+    names.forEach((name, index) => defineIndexedValue(value, name, state.items[index], false));
+    state.named = new MapIntrinsic(names.map((name, index) => [name, state.items[index]]));
+    return value;
+  };
+  const makePlugin = name => {
+    const value = ObjectIntrinsic.create(Plugin.prototype);
+    const state = {
+      name,
+      filename: "internal-pdf-viewer",
+      description: "Portable Document Format",
+      items: [],
+      named: null
+    };
+    pluginState.set(value, state);
+    state.items = [makeMimeType("application/pdf", value), makeMimeType("text/pdf", value)];
+    return populateIndexed(value, state, ["application/pdf", "text/pdf"]);
+  };
+  const makePluginArray = () => {
+    const value = ObjectIntrinsic.create(PluginArray.prototype);
+    const names = [
+      "PDF Viewer",
+      "Chrome PDF Viewer",
+      "Chromium PDF Viewer",
+      "Microsoft Edge PDF Viewer",
+      "WebKit built-in PDF"
+    ];
+    const state = { items: names.map(makePlugin), named: null };
+    pluginArrayState.set(value, state);
+    return populateIndexed(value, state, names);
+  };
+  const makeMimeTypeArray = enabledPlugin => {
+    const value = ObjectIntrinsic.create(MimeTypeArray.prototype);
+    const names = ["application/pdf", "text/pdf"];
+    const state = { items: names.map(type => makeMimeType(type, enabledPlugin)), named: null };
+    mimeTypeArrayState.set(value, state);
+    return populateIndexed(value, state, names);
+  };
+
+  const permissionStatusState = new WeakMapIntrinsic();
+  class PermissionStatus extends EventTarget {
+    constructor() { throw new TypeErrorIntrinsic("Illegal constructor"); }
+    get name() { return indexedState(permissionStatusState, this).name; }
+    get state() { return indexedState(permissionStatusState, this).state; }
+    get onchange() { return indexedState(permissionStatusState, this).onchange; }
+    set onchange(value) { indexedState(permissionStatusState, this).onchange = value; }
+  }
+  const makePermissionStatus = (name, state) => {
+    const value = ObjectIntrinsic.create(PermissionStatus.prototype);
+    permissionStatusState.set(value, { name, state, onchange: null });
+    listenersFor(value);
+    return value;
+  };
+  const permissionStates = ObjectIntrinsic.freeze({
+    "clipboard-read": "prompt",
+    "clipboard-write": "granted",
+    geolocation: "prompt",
+    notifications: "prompt",
+    camera: "prompt",
+    microphone: "prompt"
+  });
+  class Permissions {
+    constructor() { throw new TypeErrorIntrinsic("Illegal constructor"); }
+    query(descriptor) {
+      const name = descriptor && stringValue(descriptor.name || "");
+      if (!name) return PromiseIntrinsic.reject(new TypeErrorIntrinsic("Permission descriptor requires a name"));
+      return PromiseIntrinsic.resolve(makePermissionStatus(name, permissionStates[name] || "prompt"));
+    }
+  }
+
+  const networkInformationState = new WeakMapIntrinsic();
+  class NetworkInformation extends EventTarget {
+    constructor() { throw new TypeErrorIntrinsic("Illegal constructor"); }
+    get onchange() { return indexedState(networkInformationState, this).onchange; }
+    set onchange(value) { indexedState(networkInformationState, this).onchange = value; }
+    get effectiveType() { return indexedState(networkInformationState, this).effectiveType; }
+    get rtt() { return indexedState(networkInformationState, this).rtt; }
+    get downlink() { return indexedState(networkInformationState, this).downlink; }
+    get saveData() { return indexedState(networkInformationState, this).saveData; }
+  }
+
+  const screenOrientationState = new WeakMapIntrinsic();
+  class ScreenOrientation extends EventTarget {
+    constructor() { throw new TypeErrorIntrinsic("Illegal constructor"); }
+    get angle() { return indexedState(screenOrientationState, this).angle; }
+    get type() { return indexedState(screenOrientationState, this).type; }
+    get onchange() { return indexedState(screenOrientationState, this).onchange; }
+    set onchange(value) { indexedState(screenOrientationState, this).onchange = value; }
+    lock() { return PromiseIntrinsic.resolve(); }
+    unlock() {}
+  }
+
+  const mediaQueryListState = new WeakMapIntrinsic();
+  class MediaQueryList extends EventTarget {
+    constructor() { throw new TypeErrorIntrinsic("Illegal constructor"); }
+    get media() { return indexedState(mediaQueryListState, this).media; }
+    get matches() { return indexedState(mediaQueryListState, this).matches; }
+    get onchange() { return indexedState(mediaQueryListState, this).onchange; }
+    set onchange(value) { indexedState(mediaQueryListState, this).onchange = value; }
+    addListener(callback) { this.addEventListener("change", callback); }
+    removeListener(callback) { this.removeEventListener("change", callback); }
+  }
+
+  const visualViewportState = new WeakMapIntrinsic();
+  class VisualViewport extends EventTarget {
+    constructor() { throw new TypeErrorIntrinsic("Illegal constructor"); }
+    get offsetLeft() { return 0; }
+    get offsetTop() { return 0; }
+    get pageLeft() { return 0; }
+    get pageTop() { return 0; }
+    get width() { return indexedState(visualViewportState, this).width; }
+    get height() { return indexedState(visualViewportState, this).height; }
+    get scale() { return 1; }
+    get onresize() { return indexedState(visualViewportState, this).onresize; }
+    set onresize(value) { indexedState(visualViewportState, this).onresize = value; }
+    get onscroll() { return indexedState(visualViewportState, this).onscroll; }
+    set onscroll(value) { indexedState(visualViewportState, this).onscroll = value; }
+    get onscrollend() { return indexedState(visualViewportState, this).onscrollend; }
+    set onscrollend(value) { indexedState(visualViewportState, this).onscrollend = value; }
+  }
+
+  const performanceTimingState = new WeakMapIntrinsic();
+  const performanceTimingKeys = [
+    "connectStart", "secureConnectionStart", "unloadEventEnd", "domainLookupStart",
+    "domainLookupEnd", "responseStart", "connectEnd", "responseEnd", "requestStart",
+    "domLoading", "redirectStart", "loadEventEnd", "domComplete", "navigationStart",
+    "loadEventStart", "domContentLoadedEventEnd", "unloadEventStart", "redirectEnd",
+    "domInteractive", "fetchStart", "domContentLoadedEventStart"
+  ];
+  class PerformanceTiming {
+    constructor() { throw new TypeErrorIntrinsic("Illegal constructor"); }
+    toJSON() {
+      const state = indexedState(performanceTimingState, this);
+      return ObjectIntrinsic.fromEntries(performanceTimingKeys.map(key => [key, state[key]]));
+    }
+  }
+  for (const key of performanceTimingKeys) {
+    ObjectIntrinsic.defineProperty(PerformanceTiming.prototype, key, {
+      get() { return indexedState(performanceTimingState, this)[key]; },
+      enumerable: true,
+      configurable: true
+    });
+  }
+
+  const performanceNavigationState = new WeakMapIntrinsic();
+  class PerformanceNavigation {
+    constructor() { throw new TypeErrorIntrinsic("Illegal constructor"); }
+    get type() { return indexedState(performanceNavigationState, this).type; }
+    get redirectCount() { return indexedState(performanceNavigationState, this).redirectCount; }
+    toJSON() { return { type: this.type, redirectCount: this.redirectCount }; }
+  }
+  for (const [key, value] of [["TYPE_NAVIGATE", 0], ["TYPE_RELOAD", 1], ["TYPE_BACK_FORWARD", 2], ["TYPE_RESERVED", 255]]) {
+    ObjectIntrinsic.defineProperty(PerformanceNavigation.prototype, key, {
+      value,
+      writable: false,
+      enumerable: true,
+      configurable: false
+    });
+  }
+
+  const memoryInfoState = new WeakMapIntrinsic();
+  const MemoryInfoPrototype = ObjectIntrinsic.create(ObjectIntrinsic.prototype);
+  for (const key of ["totalJSHeapSize", "usedJSHeapSize", "jsHeapSizeLimit"]) {
+    ObjectIntrinsic.defineProperty(MemoryInfoPrototype, key, {
+      get() { return indexedState(memoryInfoState, this)[key]; },
+      enumerable: true,
+      configurable: true
+    });
+  }
+  ObjectIntrinsic.defineProperty(MemoryInfoPrototype, Symbol.toStringTag, {
+    value: "MemoryInfo",
+    writable: false,
+    enumerable: false,
+    configurable: true
+  });
+
   const nodeState = new WeakMapIntrinsic();
   const nodeData = node => {
-    const state = nodeState.get(node);
+    const state = stateFor(nodeState, node);
     if (!state) throw new TypeErrorIntrinsic("Illegal invocation");
     return state;
   };
@@ -750,7 +1000,7 @@
   };
 
   const elementState = new WeakMapIntrinsic();
-  const elementData = value => elementState.get(value);
+  const elementData = value => stateFor(elementState, value);
 
   class Element extends Node {
     constructor(tagName, ownerDocument = null) {
@@ -830,9 +1080,38 @@
     get contentWindow() { return elementData(this).contentWindow; }
     get contentDocument() { return this.ownerDocument; }
   }
+  const canvasState = new WeakMapIntrinsic();
+  const canvasContextState = new WeakMapIntrinsic();
+  class CanvasRenderingContext2D {
+    constructor() { throw new TypeErrorIntrinsic("Illegal constructor"); }
+    get canvas() { return indexedState(canvasContextState, this).canvas; }
+    getContextAttributes() { return { alpha: true, colorSpace: "srgb", desynchronized: false, willReadFrequently: false }; }
+    isContextLost() { return false; }
+    getLineDash() { return []; }
+    setLineDash() {}
+    measureText(text) {
+      return ObjectIntrinsic.freeze({ width: stringValue(text).length * 7 });
+    }
+  }
   class HTMLCanvasElement extends HTMLElement {
-    getContext() { return null; }
-    toDataURL() { return "data:,"; }
+    constructor(tagName, ownerDocument) {
+      super(tagName, ownerDocument);
+      canvasState.set(this, { width: 300, height: 150, context2d: null });
+    }
+    get width() { return indexedState(canvasState, this).width; }
+    set width(value) { indexedState(canvasState, this).width = numberValue(value) >>> 0; }
+    get height() { return indexedState(canvasState, this).height; }
+    set height(value) { indexedState(canvasState, this).height = numberValue(value) >>> 0; }
+    getContext(kind) {
+      if (stringValue(kind).toLowerCase() !== "2d") return null;
+      const state = indexedState(canvasState, this);
+      if (!state.context2d) {
+        state.context2d = ObjectIntrinsic.create(CanvasRenderingContext2D.prototype);
+        canvasContextState.set(state.context2d, { canvas: this });
+      }
+      return state.context2d;
+    }
+    toDataURL() { return "data:image/png;base64,"; }
   }
 
   const cookieJar = new MapIntrinsic();
@@ -914,7 +1193,7 @@
   };
 
   const documentState = new WeakMapIntrinsic();
-  const documentData = value => documentState.get(value);
+  const documentData = value => stateFor(documentState, value);
 
   class Document extends Node {
     constructor() {
@@ -964,6 +1243,7 @@
     }
     querySelector(selector) { return querySelectorFrom(this, selector, false); }
     querySelectorAll(selector) { return querySelectorFrom(this, selector, true); }
+    hasFocus() { return true; }
     get cookie() { return visibleCookies(false).map(cookie => `${cookie.name}=${cookie.value}`).join("; "); }
     set cookie(serialized) {
       const cookie = parseCookieAssignment(serialized);
@@ -1027,7 +1307,7 @@
 
   const responseState = new WeakMapIntrinsic();
   const responseData = response => {
-    const state = responseState.get(response);
+    const state = stateFor(responseState, response);
     if (!state) throw new TypeErrorIntrinsic("Illegal invocation");
     return state;
   };
@@ -1251,6 +1531,27 @@
   data(location, "toString", function toString() { return locationState.href; });
   activeLocation = location;
   registerTraceTarget(location, "Location.prototype");
+
+  const plugins = makePluginArray();
+  const mimeTypes = makeMimeTypeArray(pluginArrayState.get(plugins).items[0]);
+  const permissions = ObjectIntrinsic.create(Permissions.prototype);
+  const connection = ObjectIntrinsic.create(NetworkInformation.prototype);
+  networkInformationState.set(connection, {
+    effectiveType: "4g",
+    rtt: 150,
+    downlink: 1.75,
+    saveData: false,
+    onchange: null
+  });
+  listenersFor(connection);
+  const orientation = ObjectIntrinsic.create(ScreenOrientation.prototype);
+  screenOrientationState.set(orientation, {
+    angle: 0,
+    type: profile.screen_width >= profile.screen_height ? "landscape-primary" : "portrait-primary",
+    onchange: null
+  });
+  listenersFor(orientation);
+
   const navigator = {};
   registerTraceTarget(navigator, "Navigator.prototype");
   for (const [key, value] of ObjectIntrinsic.entries({
@@ -1262,15 +1563,20 @@
     language: profile.language,
     languages: ObjectIntrinsic.freeze(profile.languages.slice()),
     hardwareConcurrency: profile.hardware_concurrency,
-    deviceMemory: 8,
     maxTouchPoints: 0,
     webdriver: false,
     cookieEnabled: true,
     onLine: true,
     product: "Gecko",
     productSub: "20030107",
-    vendor: "Google Inc."
-  })) getter(navigator, key, () => value);
+    vendor: "Google Inc.",
+    vendorSub: "",
+    pdfViewerEnabled: true,
+    plugins,
+    mimeTypes,
+    permissions,
+    connection
+  })) data(navigator, key, value);
   const screen = {};
   registerTraceTarget(screen, "Screen.prototype");
   for (const [key, value] of ObjectIntrinsic.entries({
@@ -1281,8 +1587,117 @@
     colorDepth: profile.screen_depth,
     pixelDepth: profile.screen_depth,
     availLeft: 0,
-    availTop: 0
-  })) getter(screen, key, () => value);
+    availTop: 0,
+    orientation
+  })) data(screen, key, value);
+
+  const visualViewport = ObjectIntrinsic.create(VisualViewport.prototype);
+  visualViewportState.set(visualViewport, {
+    width: config.viewport.width,
+    height: config.viewport.height,
+    onresize: null,
+    onscroll: null,
+    onscrollend: null
+  });
+  listenersFor(visualViewport);
+  const matchMedia = query => {
+    const media = stringValue(query);
+    const width = config.viewport.width;
+    const height = config.viewport.height;
+    let matches = true;
+    const minWidth = media.match(/\(\s*min-width\s*:\s*([\d.]+)px\s*\)/i);
+    const maxWidth = media.match(/\(\s*max-width\s*:\s*([\d.]+)px\s*\)/i);
+    const minHeight = media.match(/\(\s*min-height\s*:\s*([\d.]+)px\s*\)/i);
+    const maxHeight = media.match(/\(\s*max-height\s*:\s*([\d.]+)px\s*\)/i);
+    const requestedOrientation = media.match(/\(\s*orientation\s*:\s*(portrait|landscape)\s*\)/i);
+    if (minWidth) matches = matches && width >= numberValue(minWidth[1]);
+    if (maxWidth) matches = matches && width <= numberValue(maxWidth[1]);
+    if (minHeight) matches = matches && height >= numberValue(minHeight[1]);
+    if (maxHeight) matches = matches && height <= numberValue(maxHeight[1]);
+    if (requestedOrientation)
+      matches = matches && requestedOrientation[1].toLowerCase() === (width >= height ? "landscape" : "portrait");
+    if (/prefers-color-scheme\s*:\s*dark/i.test(media)) matches = false;
+    if (/prefers-color-scheme\s*:\s*light/i.test(media)) matches = true;
+    const value = ObjectIntrinsic.create(MediaQueryList.prototype);
+    mediaQueryListState.set(value, { media, matches, onchange: null });
+    listenersFor(value);
+    return value;
+  };
+
+  const navigationStart = MathIntrinsic.floor(config.time_origin_ms);
+  const performanceTiming = ObjectIntrinsic.create(PerformanceTiming.prototype);
+  performanceTimingState.set(performanceTiming, {
+    navigationStart,
+    unloadEventStart: 0,
+    unloadEventEnd: 0,
+    redirectStart: 0,
+    redirectEnd: 0,
+    fetchStart: navigationStart,
+    domainLookupStart: 0,
+    domainLookupEnd: 0,
+    connectStart: 0,
+    connectEnd: 0,
+    secureConnectionStart: 0,
+    requestStart: 0,
+    responseStart: 0,
+    responseEnd: navigationStart + 30,
+    domLoading: navigationStart + 27,
+    domInteractive: navigationStart + 30,
+    domContentLoadedEventStart: navigationStart + 30,
+    domContentLoadedEventEnd: navigationStart + 30,
+    domComplete: navigationStart + 31,
+    loadEventStart: navigationStart + 31,
+    loadEventEnd: navigationStart + 31
+  });
+  const performanceNavigation = ObjectIntrinsic.create(PerformanceNavigation.prototype);
+  performanceNavigationState.set(performanceNavigation, { type: 0, redirectCount: 0 });
+  const performanceMemory = ObjectIntrinsic.create(MemoryInfoPrototype);
+  memoryInfoState.set(performanceMemory, {
+    totalJSHeapSize: 10_000_000,
+    usedJSHeapSize: 10_000_000,
+    jsHeapSizeLimit: 3_760_000_000
+  });
+  const performanceNavigationEntry = {};
+  const performanceEntries = [performanceNavigationEntry];
+
+  const chromeApp = {
+    isInstalled: false,
+    getDetails() { return null; },
+    getIsInstalled() { return false; },
+    installState(callback) { if (typeof callback === "function") callback("not_installed"); },
+    runningState(callback) { if (typeof callback === "function") callback("cannot_run"); },
+    InstallState: ObjectIntrinsic.freeze({ DISABLED: "disabled", INSTALLED: "installed", NOT_INSTALLED: "not_installed" }),
+    RunningState: ObjectIntrinsic.freeze({ CANNOT_RUN: "cannot_run", READY_TO_RUN: "ready_to_run", RUNNING: "running" })
+  };
+  const chrome = {
+    loadTimes() {
+      const startSeconds = config.time_origin_ms / 1000;
+      return {
+        requestTime: startSeconds,
+        startLoadTime: startSeconds,
+        commitLoadTime: 0,
+        finishDocumentLoadTime: performanceTiming.domContentLoadedEventEnd / 1000,
+        finishLoadTime: performanceTiming.loadEventEnd / 1000,
+        firstPaintTime: 0,
+        firstPaintAfterLoadTime: 0,
+        navigationType: "Other",
+        wasFetchedViaSpdy: false,
+        wasNpnNegotiated: false,
+        npnNegotiatedProtocol: "",
+        wasAlternateProtocolAvailable: false,
+        connectionInfo: "unknown"
+      };
+    },
+    csi() {
+      return {
+        startE: navigationStart,
+        onloadT: performanceTiming.loadEventEnd,
+        pageT: performance.now(),
+        tran: 15
+      };
+    },
+    app: chromeApp
+  };
 
   const localStorage = new Storage("localStorage");
   const sessionStorage = new Storage("sessionStorage");
@@ -1336,6 +1751,7 @@
   getter(globalObject, "navigator", () => navigator);
   getter(globalObject, "screen", () => screen);
   getter(globalObject, "document", () => document);
+  getter(globalObject, "visualViewport", () => visualViewport);
   data(globalObject, "location", location);
   data(globalObject, "origin", location.origin);
   data(globalObject, "innerWidth", config.viewport.width);
@@ -1350,6 +1766,18 @@
   data(globalObject, "UIEvent", UIEvent);
   data(globalObject, "MouseEvent", MouseEvent);
   data(globalObject, "EventTarget", EventTarget);
+  data(globalObject, "PluginArray", PluginArray);
+  data(globalObject, "Plugin", Plugin);
+  data(globalObject, "MimeTypeArray", MimeTypeArray);
+  data(globalObject, "MimeType", MimeType);
+  data(globalObject, "Permissions", Permissions);
+  data(globalObject, "PermissionStatus", PermissionStatus);
+  data(globalObject, "NetworkInformation", NetworkInformation);
+  data(globalObject, "ScreenOrientation", ScreenOrientation);
+  data(globalObject, "MediaQueryList", MediaQueryList);
+  data(globalObject, "VisualViewport", VisualViewport);
+  data(globalObject, "PerformanceTiming", PerformanceTiming);
+  data(globalObject, "PerformanceNavigation", PerformanceNavigation);
   data(globalObject, "Node", Node);
   data(globalObject, "CharacterData", CharacterData);
   data(globalObject, "Text", Text);
@@ -1358,6 +1786,7 @@
   data(globalObject, "HTMLElement", HTMLElement);
   data(globalObject, "HTMLIFrameElement", HTMLIFrameElement);
   data(globalObject, "HTMLCanvasElement", HTMLCanvasElement);
+  data(globalObject, "CanvasRenderingContext2D", CanvasRenderingContext2D);
   data(globalObject, "Document", Document);
   data(globalObject, "CSSStyleDeclaration", CSSStyleDeclaration);
   data(globalObject, "Storage", Storage);
@@ -1368,6 +1797,8 @@
   data(globalObject, "sessionStorage", sessionStorage);
   data(globalObject, "fetch", fetch);
   data(globalObject, "getComputedStyle", getComputedStyle);
+  data(globalObject, "matchMedia", matchMedia);
+  data(globalObject, "chrome", chrome);
   data(globalObject, "setTimeout", setTimeoutHost);
   data(globalObject, "clearTimeout", clearTimer);
   data(globalObject, "setInterval", setIntervalHost);
@@ -1406,6 +1837,23 @@
       return MathIntrinsic.floor(config.time_origin_ms + performance.now());
     }, { name: "now", length: 0, native_like: true })
   });
+  for (const [owner, key, name, length] of [
+    [chrome, "loadTimes", "loadTimes", 0],
+    [chrome, "csi", "csi", 0],
+    [chromeApp, "getDetails", "getDetails", 0],
+    [chromeApp, "getIsInstalled", "getIsInstalled", 0],
+    [chromeApp, "installState", "installState", 1],
+    [chromeApp, "runningState", "runningState", 1]
+  ]) {
+    const descriptor = ObjectIntrinsic.getOwnPropertyDescriptor(owner, key);
+    if (descriptor && typeof descriptor.value === "function")
+      markNative(descriptor.value, { name, length, native_like: true });
+  }
+  for (const key of ["totalJSHeapSize", "usedJSHeapSize", "jsHeapSizeLimit"]) {
+    const descriptor = ObjectIntrinsic.getOwnPropertyDescriptor(MemoryInfoPrototype, key);
+    if (descriptor && typeof descriptor.get === "function")
+      markNative(descriptor.get, { name: `get ${key}`, length: 0, native_like: true });
+  }
 
   const manifestKey = key => {
     if (key.kind === "string") return key.display;
@@ -1437,15 +1885,15 @@
   const accessorDefault = (path, key, receiver) => {
     const slots = slotsFor(receiver);
     if (slots.has(key)) return slots.get(key);
-    const node = nodeState.get(receiver);
+    const node = stateFor(nodeState, receiver);
     if (node && ObjectIntrinsic.prototype.hasOwnProperty.call(node, key)) return node[key];
-    const element = elementState.get(receiver);
+    const element = stateFor(elementState, receiver);
     if (element && ObjectIntrinsic.prototype.hasOwnProperty.call(element, key)) return element[key];
-    const documentValues = documentState.get(receiver);
+    const documentValues = stateFor(documentState, receiver);
     if (documentValues && ObjectIntrinsic.prototype.hasOwnProperty.call(documentValues, key)) return documentValues[key];
-    const eventValues = eventState.get(receiver);
+    const eventValues = stateFor(eventState, receiver);
     if (eventValues && ObjectIntrinsic.prototype.hasOwnProperty.call(eventValues, key)) return eventValues[key];
-    const responseValues = responseState.get(receiver);
+    const responseValues = stateFor(responseState, receiver);
     if (responseValues && ObjectIntrinsic.prototype.hasOwnProperty.call(responseValues, key)) return responseValues[key];
     if (path === "Navigator.prototype") {
       const values = {
@@ -1457,18 +1905,30 @@
         productSub: "20030107", vendor: "Google Inc.", vendorSub: "", pdfViewerEnabled: true
       };
       if (ObjectIntrinsic.prototype.hasOwnProperty.call(values, key)) return values[key];
-      if (key === "plugins" || key === "mimeTypes") return ObjectIntrinsic.freeze([]);
+      if (key === "plugins") return plugins;
+      if (key === "mimeTypes") return mimeTypes;
+      if (key === "permissions") return permissions;
+      if (key === "connection") return connection;
     }
     if (path === "Screen.prototype") {
       const values = {
         width: profile.screen_width, height: profile.screen_height,
         availWidth: profile.screen_avail_width, availHeight: profile.screen_avail_height,
         colorDepth: profile.screen_depth, pixelDepth: profile.screen_depth,
-        availLeft: 0, availTop: 0, orientation: null
+        availLeft: 0, availTop: 0, orientation
       };
       if (ObjectIntrinsic.prototype.hasOwnProperty.call(values, key)) return values[key];
     }
-    if (path === "Performance.prototype" && key === "timeOrigin") return config.time_origin_ms;
+    if (path === "Performance.prototype") {
+      const values = {
+        timeOrigin: config.time_origin_ms,
+        timing: performanceTiming,
+        navigation: performanceNavigation,
+        memory: performanceMemory,
+        interactionCount: 0
+      };
+      if (ObjectIntrinsic.prototype.hasOwnProperty.call(values, key)) return values[key];
+    }
     if (path === "Document.prototype") {
       const values = {
         URL: location.href, documentURI: location.href, referrer: "", readyState: "complete",
@@ -1483,8 +1943,35 @@
     return null;
   };
   const stubFunction = spec => markNative(function () {}, spec);
+  const semanticMethod = (path, key) => {
+    if (path === "Navigator.prototype") {
+      if (key === "getGamepads") return function () { return [null, null, null, null]; };
+      if (key === "javaEnabled") return function () { return false; };
+      if (key === "sendBeacon") return function () { return false; };
+      if (key === "vibrate") return function () { return true; };
+    }
+    if (path === "Performance.prototype") {
+      if (key === "getEntries") return function () { return performanceEntries.slice(); };
+      if (key === "getEntriesByType") return function (type) {
+        return stringValue(type) === "navigation" ? performanceEntries.slice() : [];
+      };
+      if (key === "getEntriesByName") return function (name, type) {
+        return performanceEntries.filter(entry => entry.name === stringValue(name)
+          && (type === undefined || entry.entryType === stringValue(type)));
+      };
+      if (key === "toJSON") return function () { return { timeOrigin: config.time_origin_ms }; };
+    }
+    if (path === "PerformanceEntry.prototype" && key === "toJSON") return function () {
+      const slots = slotsFor(this);
+      return ObjectIntrinsic.fromEntries(ArrayIntrinsic.from(slots.entries()));
+    };
+    return null;
+  };
   const stubValue = (path, member) => {
-    if (member.f) return stubFunction(member.f);
+    if (member.f) {
+      const semantic = semanticMethod(path, member.k.display);
+      return semantic ? markNative(semantic, member.f) : stubFunction(member.f);
+    }
     if (member.k.kind === "symbol" && member.k.display === "Symbol(Symbol.toStringTag)")
       return interfaceTag(path);
     if (member.t === "number") return 0;
@@ -1574,13 +2061,28 @@
     for (const member of spec.members) {
       if (member.k.kind !== "string" || member.d !== "accessor") continue;
       const descriptor = ObjectIntrinsic.getOwnPropertyDescriptor(value, member.k.display);
-      if (!descriptor || !descriptor.configurable || !("value" in descriptor)) continue;
-      slots.set(member.k.display, descriptor.value);
+      if (!descriptor || !descriptor.configurable) continue;
+      if ("value" in descriptor) slots.set(member.k.display, descriptor.value);
+      else if (typeof descriptor.get === "function") slots.set(member.k.display, descriptor.get.call(value));
+      else continue;
       delete value[member.k.display];
     }
   };
   bindInstance(navigator, "Navigator");
   bindInstance(screen, "Screen");
+  bindInstance(plugins, "PluginArray", false);
+  for (const plugin of pluginArrayState.get(plugins).items) {
+    bindInstance(plugin, "Plugin", false);
+    for (const mimeType of pluginState.get(plugin).items) bindInstance(mimeType, "MimeType", false);
+  }
+  bindInstance(mimeTypes, "MimeTypeArray", false);
+  for (const mimeType of mimeTypeArrayState.get(mimeTypes).items) bindInstance(mimeType, "MimeType", false);
+  bindInstance(permissions, "Permissions", false);
+  bindInstance(connection, "NetworkInformation", false);
+  bindInstance(orientation, "ScreenOrientation", false);
+  bindInstance(visualViewport, "VisualViewport", false);
+  bindInstance(performanceTiming, "PerformanceTiming", false);
+  bindInstance(performanceNavigation, "PerformanceNavigation", false);
   bindInstance(location, "Location", false);
   const nativeNow = ObjectIntrinsic.getOwnPropertyDescriptor(performance, "now");
   bindInstance(performance, "Performance");
@@ -1589,6 +2091,48 @@
     if (ObjectIntrinsic.getOwnPropertyDescriptor(performance, "now")?.configurable) delete performance.now;
   }
   bindInstance(document, "Document");
+  bindInstance(performanceNavigationEntry, "PerformanceNavigationTiming", false);
+  const navigationEntrySlots = slotsFor(performanceNavigationEntry);
+  for (const [key, value] of ObjectIntrinsic.entries({
+    name: location.href,
+    entryType: "navigation",
+    startTime: 0,
+    duration: 31,
+    initiatorType: "navigation",
+    deliveryType: "cache",
+    nextHopProtocol: "",
+    renderBlockingStatus: "non-blocking",
+    contentType: "",
+    contentEncoding: "",
+    transferSize: 0,
+    encodedBodySize: 0,
+    decodedBodySize: 0,
+    responseStatus: 0,
+    redirectStart: 0,
+    redirectEnd: 0,
+    fetchStart: 0,
+    domainLookupStart: 0,
+    domainLookupEnd: 0,
+    connectStart: 0,
+    secureConnectionStart: 0,
+    connectEnd: 0,
+    requestStart: 0,
+    responseStart: 0,
+    responseEnd: 30,
+    domInteractive: 30,
+    domContentLoadedEventStart: 30,
+    domContentLoadedEventEnd: 30,
+    domComplete: 31,
+    loadEventStart: 31,
+    loadEventEnd: 31,
+    type: "navigate",
+    redirectCount: 0,
+    activationStart: 0,
+    criticalCHRestart: 0,
+    notRestoredReasons: null
+  })) navigationEntrySlots.set(key, value);
+  registerTraceTarget(MemoryInfoPrototype, "MemoryInfo.prototype");
+  registerTraceTarget(performanceMemory, "MemoryInfo.prototype");
 
   const applyMember = (path, object, member) => {
     const key = manifestKey(member.k);

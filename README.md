@@ -4,7 +4,8 @@
 > Google reCAPTCHA BotGuard VM** 路径、Chrome 150 的 M8 宿主语义，以及
 > 2026-08-07 当前公开 Google/recaptcha.net loader。当前在线 challenge 与私有
 > BotGuard bytecode 仍不在完成声明内。SG_SS 定向本地门禁已达到 12,841/12,841
-> descriptor、9,565/9,565 callable metadata 和 0 failure。
+> descriptor、9,565/9,565 callable metadata 和 0 failure；未经纳入 corpus 的
+> 私有 VM 中 `td={ns,rs}` / `sgs` 初始化不属于该完成声明。
 
 `yatouv8` 是面向 Windows 11 + Chrome 150 的证据驱动型 V8 浏览器宿主：先采集 Chrome 行为，再通过差异、因果 blocker、Manifest 和生成器收敛兼容层。
 
@@ -80,6 +81,18 @@ with yatouv8.Runtime(config) as runtime:
 原生对象，以及 microtask/timer 回调中的读取。GET 与 native CALL 使用共享序号，
 因此 trace 保留真实因果顺序。诊断默认关闭；`max_events` 是每个 Runtime 的硬上限。
 详细合同见 [GET tracing](docs/evidence/get-tracing.md)。
+
+不扩充 trace、直接比较最可能阻断 `td` 初始化的 API 语义：
+
+```powershell
+python tools/semantic-conformance/runner.py `
+  --backend all `
+  --output .yatou/evidence/semantic-conformance/report.json
+```
+
+该 probe 以 Chrome 150 为 oracle，同时运行 `iv8_rs` 和已安装的 `yatouv8`
+wheel；动态网络数值与窗口边框差异按不变量归一化，保留类型、brand、descriptor、
+稳定身份和方法返回语义。
 
 执行提取出的 SG_SS challenge，并把 Cookie/导航交回同一个 HTTP session：
 
@@ -185,6 +198,7 @@ tools/
 ├── google-vm-corpus # 当前公开 loader corpus 与 M9 双侧准入
 ├── host-conformance # M8 Chrome/yatouv8 同源 probe
 ├── release          # SBOM、wheel audit 与 M10 终态报告
+├── semantic-conformance # td 初始化候选 API 的 Chrome/iv8/yatouv8 三方差分
 ├── surface-codegen  # Surface Manifest 代码生成器
 └── trace-inspector  # Trace/API ledger 检查工具
 ```

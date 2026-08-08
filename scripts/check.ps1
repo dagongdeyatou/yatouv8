@@ -54,6 +54,7 @@ Invoke-PythonStep -Arguments @(
     'tools/google-vm-corpus',
     'tools/host-conformance',
     'tools/release',
+    'tools/semantic-conformance',
     'tools/surface-codegen',
     'tools/trace-inspector'
 )

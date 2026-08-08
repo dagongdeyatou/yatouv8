@@ -150,6 +150,126 @@ class RuntimeTests(unittest.TestCase):
             ]
             self.assertEqual(calls, ["createPolicy", "createScript", "isScript", "isScript"])
 
+    def test_td_candidate_api_semantics_match_chrome150(self) -> None:
+        with yatouv8.Runtime() as runtime:
+            result = runtime.eval(
+                """
+                (() => {
+                    const canvas = document.createElement("canvas");
+                    const context = canvas.getContext("2d");
+                    const media = matchMedia(
+                        "(min-width: 1px) and (orientation: landscape)",
+                    );
+                    const indexDescriptor = Object.getOwnPropertyDescriptor(
+                        navigator.plugins,
+                        "0",
+                    );
+                    const nameDescriptor = Object.getOwnPropertyDescriptor(
+                        navigator.plugins,
+                        "PDF Viewer",
+                    );
+                    return {
+                        chromeKeys: Reflect.ownKeys(chrome),
+                        chromeRuntime: typeof chrome.runtime,
+                        userAgentData: typeof navigator.userAgentData,
+                        navigatorOwnKeys: Reflect.ownKeys(navigator),
+                        screenOwnKeys: Reflect.ownKeys(screen),
+                        pluginTag: Object.prototype.toString.call(navigator.plugins),
+                        pluginLength: navigator.plugins.length,
+                        pluginName: navigator.plugins[0].name,
+                        pluginMime: navigator.plugins[0][0].type,
+                        pluginItemStable: navigator.plugins.item(0) === navigator.plugins[0],
+                        pluginNamedStable: navigator.plugins.namedItem("PDF Viewer") === navigator.plugins[0],
+                        indexDescriptor: [indexDescriptor.enumerable, indexDescriptor.configurable, indexDescriptor.writable],
+                        nameDescriptor: [nameDescriptor.enumerable, nameDescriptor.configurable, nameDescriptor.writable],
+                        mimeTag: Object.prototype.toString.call(navigator.mimeTypes),
+                        mimeLength: navigator.mimeTypes.length,
+                        permissionsTag: Object.prototype.toString.call(navigator.permissions),
+                        connectionTag: Object.prototype.toString.call(navigator.connection),
+                        connection: [
+                            navigator.connection.effectiveType,
+                            navigator.connection.rtt,
+                            navigator.connection.downlink,
+                            navigator.connection.saveData,
+                        ],
+                        orientationTag: Object.prototype.toString.call(screen.orientation),
+                        orientation: [screen.orientation.type, screen.orientation.angle],
+                        hasFocus: document.hasFocus(),
+                        timingTag: Object.prototype.toString.call(performance.timing),
+                        timingKeys: Object.keys(performance.timing.toJSON()).length,
+                        navigationTag: Object.prototype.toString.call(performance.navigation),
+                        navigation: performance.navigation.toJSON(),
+                        memoryTag: Object.prototype.toString.call(performance.memory),
+                        entryTag: Object.prototype.toString.call(
+                            performance.getEntriesByType("navigation")[0],
+                        ),
+                        mediaTag: Object.prototype.toString.call(media),
+                        mediaMatches: media.matches,
+                        viewportTag: Object.prototype.toString.call(visualViewport),
+                        viewport: [visualViewport.width, visualViewport.height, visualViewport.scale],
+                        canvas: [
+                            canvas.width,
+                            canvas.height,
+                            Object.prototype.toString.call(context),
+                            canvas.getContext("webgl"),
+                            canvas.toDataURL().startsWith("data:image/png;base64,"),
+                        ],
+                        nativeQuery: Function.prototype.toString.call(
+                            navigator.permissions.query,
+                        ).includes("[native code]"),
+                    };
+                })()
+                """
+            )
+            self.assertEqual(result["chromeKeys"], ["loadTimes", "csi", "app"])
+            self.assertEqual(result["chromeRuntime"], "undefined")
+            self.assertEqual(result["userAgentData"], "undefined")
+            self.assertEqual(result["navigatorOwnKeys"], [])
+            self.assertEqual(result["screenOwnKeys"], [])
+            self.assertEqual(result["pluginTag"], "[object PluginArray]")
+            self.assertEqual(result["pluginLength"], 5)
+            self.assertEqual(result["pluginName"], "PDF Viewer")
+            self.assertEqual(result["pluginMime"], "application/pdf")
+            self.assertTrue(result["pluginItemStable"])
+            self.assertTrue(result["pluginNamedStable"])
+            self.assertEqual(result["indexDescriptor"], [True, True, False])
+            self.assertEqual(result["nameDescriptor"], [False, True, False])
+            self.assertEqual(result["mimeTag"], "[object MimeTypeArray]")
+            self.assertEqual(result["mimeLength"], 2)
+            self.assertEqual(result["permissionsTag"], "[object Permissions]")
+            self.assertEqual(result["connectionTag"], "[object NetworkInformation]")
+            self.assertEqual(result["connection"], ["4g", 150, 1.75, False])
+            self.assertEqual(result["orientationTag"], "[object ScreenOrientation]")
+            self.assertEqual(result["orientation"], ["landscape-primary", 0])
+            self.assertTrue(result["hasFocus"])
+            self.assertEqual(result["timingTag"], "[object PerformanceTiming]")
+            self.assertEqual(result["timingKeys"], 21)
+            self.assertEqual(result["navigationTag"], "[object PerformanceNavigation]")
+            self.assertEqual(result["navigation"], {"type": 0, "redirectCount": 0})
+            self.assertEqual(result["memoryTag"], "[object MemoryInfo]")
+            self.assertEqual(result["entryTag"], "[object PerformanceNavigationTiming]")
+            self.assertEqual(result["mediaTag"], "[object MediaQueryList]")
+            self.assertTrue(result["mediaMatches"])
+            self.assertEqual(result["viewportTag"], "[object VisualViewport]")
+            self.assertEqual(result["viewport"], [1280, 720, 1])
+            self.assertEqual(
+                result["canvas"],
+                [300, 150, "[object CanvasRenderingContext2D]", None, True],
+            )
+            self.assertTrue(result["nativeQuery"])
+
+            runtime.eval(
+                "globalThis.permissionProbe=null;"
+                "navigator.permissions.query({name:'geolocation'}).then(value=>{"
+                "permissionProbe=[Object.prototype.toString.call(value),value.name,value.state]"
+                "});'queued'"
+            )
+            runtime.drain()
+            self.assertEqual(
+                runtime.eval("permissionProbe"),
+                ["[object PermissionStatus]", "geolocation", "prompt"],
+            )
+
     def test_get_trace_is_opt_in_and_semantics_preserving(self) -> None:
         with yatouv8.Runtime() as runtime:
             oracle = runtime.eval(self.GET_TRACE_SOURCE)
