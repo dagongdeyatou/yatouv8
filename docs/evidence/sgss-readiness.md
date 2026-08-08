@@ -17,7 +17,8 @@
 | 内部全局泄漏 | `__yatou*`、`_listeners` 为 0 |
 | brands | Navigator、Screen、Location、Performance、Document 匹配 |
 | reflection trace | `own_keys`、`get_own_property_descriptor`、`get_prototype_of`、`has` 已验证 |
-| clock | 回放 Chrome 录制分布；800 次调用存在重复值，非逐次固定递增 |
+| clock | fixture 回放 Chrome 分布；在线模式从 curl total time 启动 0.1 ms 量化单调时钟 |
+| navigation timing | curl DNS/TCP/TLS/TTFB/total 同时驱动 legacy timing 与 PerformanceNavigationTiming entry |
 | Cookie | `SG_SS` 属性化存储、导入/导出与 Python session handoff 已验证 |
 | navigation | `location.replace()` 解析、记录、peek/take 已验证 |
 | Trusted Types | `createPolicy`、`createScript` 与 native-like contract 已验证 |
@@ -31,6 +32,12 @@
 metadata，不等价于 12,841 个成员都具有完整 Chromium 行为。当前在线 VM 是否激活仍以
 同一脚本的 first-divergence trace 为准；调用量下降只能说明更早分支退出，不能用门禁
 总数替代行为证据。
+
+本轮同时关闭了三个旧的误报方向：Chrome 150 基线的 981 个 global own keys 中本来就
+没有 `global`，因此 `globalThis.global === undefined` 不应补成 Node 风格对象；当前页面
+的 `sp/ussv` 均为空，`window.sgs` 分支按页面输入关闭；VM 已初始化 `knitsail`、生成
+SG_SS 并触发消费，所以不能再用 trace event 数量或 navigator 子属性读取数量判断它
+“提前退出”。
 
 ## SG_SS 本地流程
 
@@ -48,9 +55,13 @@ metadata，不等价于 12,841 个成员都具有完整 Chromium 行为。当前
 
 本地门禁不硬编码 `window.td`、`window.sgs` 或真实 `SG_SS`。最终在线第二跳仍必须使用
 同一时刻取得的首次 `/search` 响应、脚本资源、Cookie 和 `location.replace` URL。
-2026-08-08 本机再次执行在线二跳：经 `127.0.0.1:7897` 访问
-`www.google.com.hk:443` 时代理端中止 TLS，直连则在 20 秒后超时。失败记录位于
-`.yatou/evidence/google-vm-execution/live-handoff.json`，因此没有伪造“在线
-SearchResultsPage 已通过”的结论。
-拿到可访问的挑战响应后，可直接使用 `Runtime.eval_challenge()`、`import_cookies()`、
-`export_cookies(session)` 和 `take_navigation()` 完成同会话第二跳验收。
+2026-08-09 已通过 `127.0.0.1:7890` 完成三次 trace-free 同会话在线二跳：每次首次
+响应均为 HTTP 200，四段脚本零异常，`knitsail` 初始化，生成 SG_SS 和 `sei` 导航；
+第二跳响应链也都写入 `SG_SS=0`，说明一次性 token 已被消费。但最终响应仍为 HTTP 429
+`/sorry/`，所以 SearchResultsPage 硬门禁保持失败。记录位于
+`.yatou/evidence/google-vm-live/google-com-ya-fei-live-acceptance.json`。
+
+同一代理下，隔离的新 Chrome 151 profile + Chrome 自己生成的 SG_SS 也落入 429；本机
+长期用户 Chrome profile 则能直接打开同一搜索。因此当前证据把剩余差异定位到 fresh
+session / Google 风险状态，不能再把它单独归因于 yatouv8 API 缺口，也不能据此宣称
+在线搜索已通过。正式在线入口为 `tools/google-vm-acceptance/live_runner.py`。

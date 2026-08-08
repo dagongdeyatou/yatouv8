@@ -5,7 +5,9 @@
 > 2026-08-07 当前公开 Google/recaptcha.net loader。当前在线 challenge 与私有
 > BotGuard bytecode 仍不在完成声明内。SG_SS 定向本地门禁已达到 12,841/12,841
 > descriptor、9,565/9,565 callable metadata 和 0 failure；未经纳入 corpus 的
-> 私有 VM 中 `td={ns,rs}` / `sgs` 初始化不属于该完成声明。
+> 私有 VM 中 `sgs` 初始化不属于该完成声明。当前在线 Google Search challenge 已能
+> 生成并在同 session 第二跳消费 SG_SS，但 fresh curl 与 fresh Chrome control 均被
+> Google 的后续 `/sorry/` 风险门禁拒绝，因此尚未宣称 SearchResultsPage 在线通过。
 
 `yatouv8` 是面向 Windows 11 + Chrome 150 的证据驱动型 V8 浏览器宿主：先采集 Chrome 行为，再通过差异、因果 blocker、Manifest 和生成器收敛兼容层。
 
@@ -134,9 +136,9 @@ wheel；动态网络数值与窗口边框差异按不变量归一化，保留类
 ```python
 import yatouv8
 
-config = yatouv8.RuntimeConfig(
-    url="https://www.google.com/search?q=fixture",
-    get_trace=yatouv8.GetTraceConfig(enabled=True, max_events=50_000),
+config = yatouv8.RuntimeConfig.from_curl_response(
+    first_response,
+    navigation_start_ms=request_start_ms,
 )
 with yatouv8.Runtime(config) as runtime:
     runtime.import_cookies(session.cookies)
@@ -146,6 +148,19 @@ with yatouv8.Runtime(config) as runtime:
 ```
 
 `result` 同时返回 value、cookies、pending navigation、drain 结果与 trace stats。
+在线 oracle 必须保持 GET/Inspector trace 关闭；诊断 Proxy 不能进入 token 生成路径。
+
+执行完整同会话在线硬门禁：
+
+```powershell
+py -3.13 tools\google-vm-acceptance\live_runner.py `
+  --url "https://www.google.com/search?q=亚非" `
+  --proxy "http://127.0.0.1:7890" `
+  --attempts 3 `
+  --output .yatou\evidence\google-vm-live\google-com-ya-fei-live-acceptance.json
+```
+
+只有 HTTP 200、非 `/sorry/`、搜索结果 DOM 和 `SG_SS=0` 四个在线终态同时成立才返回 0。
 
 ## 构建 V8 smoke test
 
@@ -229,6 +244,7 @@ crates/
 
 tools/
 ├── chrome-collector # Chrome 150 CDP 采集器
+├── google-vm-acceptance # SG_SS 本地谓词与同 session 在线硬门禁
 ├── google-vm-collector # 真实归档 BotGuard oracle/diagnostic 与 M6 准入
 ├── google-vm-corpus # 当前公开 loader corpus 与 M9 双侧准入
 ├── host-conformance # M8 Chrome/yatouv8 同源 probe

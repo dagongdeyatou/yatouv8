@@ -51,6 +51,7 @@ Invoke-PythonStep -Arguments @(
     '-m', 'compileall', '-q',
     'tools/chrome-collector',
     'tools/google-vm-collector',
+    'tools/google-vm-acceptance',
     'tools/google-vm-corpus',
     'tools/host-conformance',
     'tools/release',
@@ -59,5 +60,6 @@ Invoke-PythonStep -Arguments @(
     'tools/trace-inspector'
 )
 Invoke-PythonStep -Arguments @('-m', 'unittest', 'discover', 'tools/chrome-collector/tests', '-v')
+Invoke-PythonStep -Arguments @('-m', 'unittest', 'discover', 'tools/google-vm-acceptance', '-p', 'test_*.py', '-v')
 Invoke-PythonStep -Arguments @('-m', 'unittest', 'discover', 'tools/surface-codegen/tests', '-v')
 Invoke-PythonStep -Arguments @('-m', 'unittest', 'discover', 'tools/trace-inspector/tests', '-v')

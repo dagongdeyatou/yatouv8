@@ -15,3 +15,6 @@ $python = 'C:\ProgramData\anaconda3\python.exe'
 if (!(Test-Path -LiteralPath $python)) { $python = (Get-Command python.exe).Source }
 & $python -m unittest discover python/tests -v
 if ($LASTEXITCODE -ne 0) { throw 'Python runtime acceptance failed' }
+
+& $python -m unittest discover tools/google-vm-acceptance -p 'test_*.py' -v
+if ($LASTEXITCODE -ne 0) { throw 'Google VM acceptance helper tests failed' }

@@ -1,12 +1,78 @@
 from __future__ import annotations
 
 import concurrent.futures
+import datetime
+from enum import Enum
+import time
 import unittest
 
 import yatouv8
 
 
 class RuntimeTests(unittest.TestCase):
+    def test_curl_response_builds_causal_navigation_and_system_clock(self) -> None:
+        class Info(Enum):
+            NAMELOOKUP_TIME = 1
+            CONNECT_TIME = 2
+            APPCONNECT_TIME = 3
+            PRETRANSFER_TIME = 4
+            STARTTRANSFER_TIME = 5
+            TOTAL_TIME = 6
+            HTTP_VERSION = 7
+            SIZE_DOWNLOAD_T = 8
+            HEADER_SIZE = 9
+
+        class Response:
+            url = "https://www.google.com/search?q=yatouv8"
+            status_code = 200
+            content = b"decoded-body"
+            elapsed = datetime.timedelta(milliseconds=421)
+            infos = {
+                Info.NAMELOOKUP_TIME: 0.002,
+                Info.CONNECT_TIME: 0.018,
+                Info.APPCONNECT_TIME: 0.120,
+                Info.PRETRANSFER_TIME: 0.121,
+                Info.STARTTRANSFER_TIME: 0.390,
+                Info.TOTAL_TIME: 0.421,
+                Info.HTTP_VERSION: 3,
+                Info.SIZE_DOWNLOAD_T: 8,
+                Info.HEADER_SIZE: 120,
+            }
+
+        config = yatouv8.RuntimeConfig.from_curl_response(
+            Response(),
+            navigation_start_ms=1_786_210_000_000.25,
+        )
+
+        self.assertEqual(config.profile.clock["mode"], "system_monotonic")
+        self.assertEqual(config.profile.clock["start_ms"], 421.0)
+        self.assertEqual(config.profile.navigation_timing["response_start"], 390)
+        self.assertEqual(config.profile.navigation_timing["response_end"], 421)
+        self.assertIsNone(config.profile.navigation_timing["load_event_end"])
+        with yatouv8.Runtime(config) as runtime:
+            first = runtime.eval("performance.now()")
+            time.sleep(0.02)
+            second = runtime.eval("performance.now()")
+            timing = runtime.eval(
+                "({start:performance.timing.navigationStart,"
+                "response:performance.timing.responseStart,"
+                "complete:performance.timing.domComplete})"
+            )
+            navigation = runtime.eval(
+                "performance.getEntriesByType('navigation')[0].toJSON()"
+            )
+
+        self.assertGreaterEqual(first, 421.0)
+        self.assertGreaterEqual(second - first, 10.0)
+        self.assertEqual(timing["response"] - timing["start"], 390)
+        self.assertEqual(timing["complete"], 0)
+        self.assertEqual(navigation["responseStart"], 390)
+        self.assertEqual(navigation["responseEnd"], 421)
+        self.assertEqual(navigation["nextHopProtocol"], "h2")
+        self.assertEqual(navigation["responseStatus"], 200)
+        self.assertEqual(navigation["transferSize"], 128)
+        self.assertEqual(navigation["decodedBodySize"], 12)
+
     def test_execution_trace_captures_nested_eval_source_and_missed_branch(self) -> None:
         config = yatouv8.RuntimeConfig(
             execution_trace=yatouv8.ExecutionTraceConfig(

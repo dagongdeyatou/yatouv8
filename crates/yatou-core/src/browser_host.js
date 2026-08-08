@@ -1983,7 +1983,9 @@
       };
       if (key === "toJSON") return function () { return { timeOrigin: config.time_origin_ms }; };
     }
-    if (path === "PerformanceEntry.prototype" && key === "toJSON") return function () {
+    if ((path === "PerformanceEntry.prototype"
+      || path === "PerformanceResourceTiming.prototype"
+      || path === "PerformanceNavigationTiming.prototype") && key === "toJSON") return function () {
       const slots = slotsFor(this);
       return ObjectIntrinsic.fromEntries(ArrayIntrinsic.from(slots.entries()));
     };
@@ -2133,38 +2135,43 @@
   bindInstance(document, "Document");
   bindInstance(performanceNavigationEntry, "PerformanceNavigationTiming", false);
   const navigationEntrySlots = slotsFor(performanceNavigationEntry);
+  const navigationEntryProfile = profile.navigation_entry || {};
+  const relativeTimingValue = key => timingOffsets[key] == null
+    ? 0
+    : numberValue(timingOffsets[key]);
+  const navigationDuration = relativeTimingValue("load_event_end");
   for (const [key, value] of ObjectIntrinsic.entries({
     name: location.href,
     entryType: "navigation",
     startTime: 0,
-    duration: 31,
+    duration: navigationDuration,
     initiatorType: "navigation",
-    deliveryType: "cache",
-    nextHopProtocol: "",
+    deliveryType: stringValue(navigationEntryProfile.delivery_type || ""),
+    nextHopProtocol: stringValue(navigationEntryProfile.next_hop_protocol || ""),
     renderBlockingStatus: "non-blocking",
     contentType: "",
     contentEncoding: "",
-    transferSize: 0,
-    encodedBodySize: 0,
-    decodedBodySize: 0,
-    responseStatus: 0,
-    redirectStart: 0,
-    redirectEnd: 0,
-    fetchStart: 0,
-    domainLookupStart: 0,
-    domainLookupEnd: 0,
-    connectStart: 0,
-    secureConnectionStart: 0,
-    connectEnd: 0,
-    requestStart: 0,
-    responseStart: 0,
-    responseEnd: 30,
-    domInteractive: 30,
-    domContentLoadedEventStart: 30,
-    domContentLoadedEventEnd: 30,
-    domComplete: 31,
-    loadEventStart: 31,
-    loadEventEnd: 31,
+    transferSize: numberValue(navigationEntryProfile.transfer_size || 0),
+    encodedBodySize: numberValue(navigationEntryProfile.encoded_body_size || 0),
+    decodedBodySize: numberValue(navigationEntryProfile.decoded_body_size || 0),
+    responseStatus: numberValue(navigationEntryProfile.response_status || 0),
+    redirectStart: relativeTimingValue("redirect_start"),
+    redirectEnd: relativeTimingValue("redirect_end"),
+    fetchStart: relativeTimingValue("fetch_start"),
+    domainLookupStart: relativeTimingValue("domain_lookup_start"),
+    domainLookupEnd: relativeTimingValue("domain_lookup_end"),
+    connectStart: relativeTimingValue("connect_start"),
+    secureConnectionStart: relativeTimingValue("secure_connection_start"),
+    connectEnd: relativeTimingValue("connect_end"),
+    requestStart: relativeTimingValue("request_start"),
+    responseStart: relativeTimingValue("response_start"),
+    responseEnd: relativeTimingValue("response_end"),
+    domInteractive: relativeTimingValue("dom_interactive"),
+    domContentLoadedEventStart: relativeTimingValue("dom_content_loaded_event_start"),
+    domContentLoadedEventEnd: relativeTimingValue("dom_content_loaded_event_end"),
+    domComplete: relativeTimingValue("dom_complete"),
+    loadEventStart: relativeTimingValue("load_event_start"),
+    loadEventEnd: relativeTimingValue("load_event_end"),
     type: "navigate",
     redirectCount: 0,
     activationStart: 0,

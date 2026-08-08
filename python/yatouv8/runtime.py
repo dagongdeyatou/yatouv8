@@ -2,8 +2,9 @@
 
 from __future__ import annotations
 
-from dataclasses import asdict, dataclass, field
+from dataclasses import asdict, dataclass, field, replace
 import json
+import math
 from typing import Any, Mapping
 
 from ._native import Runtime as _NativeRuntime
@@ -39,7 +40,7 @@ class ChallengeResult:
 
 @dataclass(slots=True)
 class BrowserProfile:
-    """Chrome 150 identity and evidence-replayed clock profile."""
+    """Chrome 150 identity plus replayed or request-coupled timing."""
 
     user_agent: str = (
         "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
@@ -76,6 +77,14 @@ class BrowserProfile:
         "fetch_start": 3,
         "dom_content_loaded_event_start": 17,
     })
+    navigation_entry: dict[str, Any] = field(default_factory=lambda: {
+        "delivery_type": "cache",
+        "next_hop_protocol": "",
+        "response_status": 0,
+        "transfer_size": 0,
+        "encoded_body_size": 0,
+        "decoded_body_size": 0,
+    })
     clock: dict[str, Any] = field(default_factory=lambda: {
         "mode": "recorded",
         "buckets": [
@@ -103,6 +112,136 @@ class BrowserProfile:
         "fallback_quantum_ms": 0.1,
         "fallback_repeats": 24,
     })
+
+
+@dataclass(frozen=True, slots=True)
+class HttpNavigationTiming:
+    """Causal navigation offsets derived from one completed HTTP request."""
+
+    navigation_start_ms: float
+    name_lookup_ms: float
+    connect_ms: float
+    app_connect_ms: float
+    pretransfer_ms: float
+    response_start_ms: float
+    response_end_ms: float
+
+    @classmethod
+    def from_curl_response(
+        cls,
+        response: Any,
+        *,
+        navigation_start_ms: float,
+    ) -> "HttpNavigationTiming":
+        """Build timing from curl_cffi ``Response.infos`` with safe fallback."""
+
+        if not math.isfinite(navigation_start_ms) or navigation_start_ms <= 0:
+            raise ValueError("navigation_start_ms must be a positive finite epoch value")
+        infos = {
+            getattr(key, "name", str(key)): float(value)
+            for key, value in dict(getattr(response, "infos", {}) or {}).items()
+        }
+        elapsed = getattr(response, "elapsed", None)
+        fallback_seconds = float(elapsed.total_seconds()) if elapsed is not None else 0.0
+
+        def milliseconds(name: str, fallback: float = 0.0) -> float:
+            value = infos.get(name, fallback)
+            return max(0.0, float(value) * 1_000.0)
+
+        total = milliseconds("TOTAL_TIME", fallback_seconds)
+        if total <= 0:
+            raise ValueError("curl response does not expose a positive total request time")
+        lookup = min(milliseconds("NAMELOOKUP_TIME"), total)
+        connect = min(max(milliseconds("CONNECT_TIME"), lookup), total)
+        app_connect = min(max(milliseconds("APPCONNECT_TIME", connect / 1_000.0), connect), total)
+        pretransfer = min(max(milliseconds("PRETRANSFER_TIME", app_connect / 1_000.0), app_connect), total)
+        response_start = min(
+            max(milliseconds("STARTTRANSFER_TIME", total / 1_000.0), pretransfer),
+            total,
+        )
+        return cls(
+            navigation_start_ms=navigation_start_ms,
+            name_lookup_ms=lookup,
+            connect_ms=connect,
+            app_connect_ms=app_connect,
+            pretransfer_ms=pretransfer,
+            response_start_ms=response_start,
+            response_end_ms=total,
+        )
+
+    @staticmethod
+    def _legacy_ms(value: float) -> int:
+        return max(0, int(round(value)))
+
+    def navigation_profile(self) -> dict[str, int | None]:
+        """Return legacy PerformanceTiming offsets valid during inline parsing."""
+
+        lookup = self._legacy_ms(self.name_lookup_ms)
+        connect = self._legacy_ms(self.connect_ms)
+        app_connect = self._legacy_ms(self.app_connect_ms)
+        pretransfer = self._legacy_ms(self.pretransfer_ms)
+        response_start = self._legacy_ms(self.response_start_ms)
+        response_end = self._legacy_ms(self.response_end_ms)
+        return {
+            "connect_start": lookup,
+            "secure_connection_start": connect if app_connect > connect else None,
+            "unload_event_end": None,
+            "domain_lookup_start": 0,
+            "domain_lookup_end": lookup,
+            "response_start": response_start,
+            "connect_end": app_connect,
+            "response_end": response_end,
+            "request_start": pretransfer,
+            "dom_loading": response_end,
+            "redirect_start": None,
+            "load_event_end": None,
+            "dom_complete": None,
+            "load_event_start": None,
+            "dom_content_loaded_event_end": None,
+            "unload_event_start": None,
+            "redirect_end": None,
+            "dom_interactive": None,
+            "fetch_start": 0,
+            "dom_content_loaded_event_start": None,
+        }
+
+    def clock_profile(self, *, quantum_ms: float = 0.1) -> dict[str, Any]:
+        """Start a real monotonic clock at the completed-response offset."""
+
+        return {
+            "mode": "system_monotonic",
+            "start_ms": self.response_end_ms,
+            "quantum_ms": quantum_ms,
+        }
+
+    @staticmethod
+    def navigation_entry_profile(response: Any) -> dict[str, Any]:
+        """Map curl transfer metadata to PerformanceNavigationTiming fields."""
+
+        infos = {
+            getattr(key, "name", str(key)): float(value)
+            for key, value in dict(getattr(response, "infos", {}) or {}).items()
+        }
+        http_version = int(infos.get("HTTP_VERSION", 0))
+        if http_version in {3, 4, 5}:
+            protocol = "h2"
+        elif http_version in {30, 31}:
+            protocol = "h3"
+        elif http_version in {1, 2}:
+            protocol = "http/1.1"
+        else:
+            protocol = ""
+        body = bytes(getattr(response, "content", b"") or b"")
+        encoded_size = max(0, int(infos.get("SIZE_DOWNLOAD_T", len(body))))
+        header_size = max(0, int(infos.get("HEADER_SIZE", 0)))
+        return {
+            "delivery_type": "",
+            "next_hop_protocol": protocol,
+            "response_status": int(getattr(response, "status_code", 0) or 0),
+            "transfer_size": header_size + encoded_size,
+            "encoded_body_size": encoded_size,
+            "decoded_body_size": len(body),
+        }
 
 
 @dataclass(slots=True)
@@ -137,6 +276,34 @@ class RuntimeConfig:
     trace_id: str = "yatou-python-runtime"
     get_trace: GetTraceConfig = field(default_factory=GetTraceConfig)
     execution_trace: ExecutionTraceConfig = field(default_factory=ExecutionTraceConfig)
+
+    @classmethod
+    def from_curl_response(
+        cls,
+        response: Any,
+        *,
+        navigation_start_ms: float,
+        profile: BrowserProfile | None = None,
+        clock_quantum_ms: float = 0.1,
+        **runtime_options: Any,
+    ) -> "RuntimeConfig":
+        """Create a request-coupled runtime for a curl_cffi response."""
+
+        timing = HttpNavigationTiming.from_curl_response(
+            response,
+            navigation_start_ms=navigation_start_ms,
+        )
+        coupled_profile = replace(
+            profile or BrowserProfile(),
+            navigation_timing=timing.navigation_profile(),
+            navigation_entry=timing.navigation_entry_profile(response),
+            clock=timing.clock_profile(quantum_ms=clock_quantum_ms),
+        )
+        runtime_options.setdefault("url", str(response.url))
+        runtime_options.setdefault("viewport_width", coupled_profile.screen_width)
+        runtime_options.setdefault("viewport_height", coupled_profile.screen_height)
+        runtime_options.setdefault("time_origin_ms", navigation_start_ms)
+        return cls(profile=coupled_profile, **runtime_options)
 
     def to_json(self) -> str:
         """Return canonical compact JSON for the Rust data contract."""

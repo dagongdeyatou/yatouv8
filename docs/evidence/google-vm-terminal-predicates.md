@@ -3,7 +3,7 @@
 `undefined` 不是统一的失败信号。JavaScript setter 和多数事件/存储/导航方法本来就
 返回 `undefined`；页面初始化前读取一个稍后创建的 global 也不能证明初始化失败。
 
-对 `debug_step1.html` 这类 Google 搜索 SG_SS challenge，终态门槛是：
+对 `debug_step1.html` 这类 Google 搜索 SG_SS challenge，**本地 VM/handoff** 门槛是：
 
 1. 页面脚本没有未处理异常；
 2. `window.knitsail` 最终为 object；
@@ -13,6 +13,21 @@
 6. trace 观察到 `Location.prototype.replace` CALL；
 7. Runtime 导出一个带 domain/path 属性的结构化 `SG_SS` Cookie，可交给 HTTP session；
 8. Runtime 暴露 `kind=replace`、同入口 URL 且包含 `sei` 的 pending navigation。
+
+以上只能证明 VM 和 HTTP client 之间的交接完整，不是在线搜索成功。**在线终态**还必须
+在同一个 HTTP session 中满足：
+
+1. 首次 `/search` 的 Cookie、响应正文和 request start time 原样进入 Runtime；
+2. GET trace 与 Inspector execution trace 均关闭，避免 Proxy/诊断钩子污染快照；
+3. `performance.timing`、`PerformanceNavigationTiming` 和 `performance.now()` 由本次
+   curl DNS/TCP/TLS/TTFB/total timing 因果生成；
+4. 只把 Runtime 新生成的 `SG_SS` 合并回原 Cookie jar；
+5. 第二跳使用同一 session、`location.replace()` 产出的 `sei` URL 和 same-origin
+   navigation headers；
+6. 最终 HTTP 200、URL 不在 `/sorry/`、正文具有 SearchResultsPage/search DOM；
+7. 响应链明确写入 `SG_SS=0`，证明一次性 Cookie 已消费。
+
+任何一项失败都不得宣称在线通过。
 
 `window.sgs` 不是固定门槛。目标页面源码的选择条件是：
 
@@ -42,7 +57,7 @@ window.sgs && ussv && sp ? window.sgs(sp) : Promise.resolve(false)
 因此不应通过伪造 `window.sgs` 或增加无意义事件数来制造“进展”。缺失第 4 个 bootstrap
 脚本的负对照只有 `92` 个 L1 events，并且不会生成 timing、Cookie 或 navigation。
 
-验收命令：
+本地诊断验收命令：
 
 ```powershell
 py -3.13 tools\google-vm-acceptance\runner.py `
@@ -54,3 +69,15 @@ py -3.13 tools\google-vm-acceptance\runner.py `
 输出保留源码 SHA-256、逐 eval precise coverage、终态谓词、trace 索引、脱敏 Cookie
 handoff 记录与 pending navigation。不会保存完整 SG_SS Cookie，只保存长度、首字符和
 SHA-256。
+
+在线硬门禁（默认经 `127.0.0.1:7890`，最多三次冷 session）：
+
+```powershell
+py -3.13 tools\google-vm-acceptance\live_runner.py `
+  --url "https://www.google.com/search?q=亚非" `
+  --proxy "http://127.0.0.1:7890" `
+  --attempts 3 `
+  --output .yatou\evidence\google-vm-live\google-com-ya-fei-live-acceptance.json
+```
+
+输出只保留 SG_SS 的长度、首字符和 SHA-256，不落盘 token。

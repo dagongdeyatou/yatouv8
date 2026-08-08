@@ -5,6 +5,7 @@ use std::collections::BTreeMap;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Mutex, Once, mpsc};
 use std::thread::{self, JoinHandle};
+use std::time::Instant;
 
 use base64::Engine as _;
 use serde::{Deserialize, Serialize};
@@ -78,6 +79,16 @@ pub enum ClockMode {
         fallback_quantum_ms: f64,
         /// Calls sharing one fallback quantum.
         fallback_repeats: u32,
+    },
+    /// Advance from a request-coupled starting offset using the host monotonic
+    /// clock, quantized to Chrome's observable timer resolution.
+    SystemMonotonic {
+        /// `performance.now()` offset at runtime construction, normally the
+        /// completed HTTP response time measured from navigation start.
+        start_ms: f64,
+        /// Observable clock quantum. Chrome on a non-isolated page normally
+        /// exposes 0.1 ms resolution.
+        quantum_ms: f64,
     },
 }
 
@@ -156,6 +167,36 @@ impl Default for NavigationTimingProfile {
     }
 }
 
+/// Network metadata exposed by the current `PerformanceNavigationTiming` entry.
+#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
+pub struct NavigationEntryProfile {
+    /// Delivery type; empty for an ordinary network response.
+    pub delivery_type: String,
+    /// Negotiated application protocol such as `h2` or `h3`.
+    pub next_hop_protocol: String,
+    /// HTTP response status.
+    pub response_status: u16,
+    /// Header plus encoded body bytes transferred over the network.
+    pub transfer_size: u64,
+    /// Encoded response body bytes.
+    pub encoded_body_size: u64,
+    /// Decoded response body bytes visible to JavaScript.
+    pub decoded_body_size: u64,
+}
+
+impl Default for NavigationEntryProfile {
+    fn default() -> Self {
+        Self {
+            delivery_type: "cache".to_owned(),
+            next_hop_protocol: String::new(),
+            response_status: 0,
+            transfer_size: 0,
+            encoded_body_size: 0,
+            decoded_body_size: 0,
+        }
+    }
+}
+
 /// Minimal evidence-derived browser profile required by the M6 target.
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
 pub struct BrowserProfile {
@@ -182,6 +223,9 @@ pub struct BrowserProfile {
     /// Evidence-derived relative values for the legacy `PerformanceTiming` object.
     #[serde(default)]
     pub navigation_timing: NavigationTimingProfile,
+    /// Request-derived metadata for `PerformanceNavigationTiming`.
+    #[serde(default)]
+    pub navigation_entry: NavigationEntryProfile,
     /// Deterministic clock profile.
     pub clock: ClockMode,
 }
@@ -202,6 +246,7 @@ impl Default for BrowserProfile {
             screen_avail_height: 1_032,
             screen_depth: 24,
             navigation_timing: NavigationTimingProfile::default(),
+            navigation_entry: NavigationEntryProfile::default(),
             clock: ClockMode::Recorded {
                 buckets: default_chrome_clock_buckets(),
                 fallback_quantum_ms: 0.1,
@@ -294,6 +339,9 @@ struct CallbackState {
     clock_index: usize,
     clock_fallback_repeats: u32,
     clock_fallback_count: u32,
+    clock_system_started: Option<Instant>,
+    clock_system_start_ms: f64,
+    clock_system_quantum_ms: f64,
     observation_sequence: u32,
     observations: Vec<NativeObservation>,
 }
@@ -307,6 +355,9 @@ impl Default for CallbackState {
             clock_index: 0,
             clock_fallback_repeats: 1,
             clock_fallback_count: 0,
+            clock_system_started: None,
+            clock_system_start_ms: 0.0,
+            clock_system_quantum_ms: 0.1,
             observation_sequence: 0,
             observations: Vec::new(),
         }
@@ -418,8 +469,18 @@ pub fn run_botguard(
 }
 
 fn configure_callbacks(clock: &ClockMode) {
-    let (clock_next_ms, clock_step_ms, clock_recorded, clock_fallback_repeats) = match clock {
-        ClockMode::FixedStep { start_ms, step_ms } => (*start_ms, *step_ms, Vec::new(), 1),
+    let (
+        clock_next_ms,
+        clock_step_ms,
+        clock_recorded,
+        clock_fallback_repeats,
+        clock_system_started,
+        clock_system_start_ms,
+        clock_system_quantum_ms,
+    ) = match clock {
+        ClockMode::FixedStep { start_ms, step_ms } => {
+            (*start_ms, *step_ms, Vec::new(), 1, None, 0.0, 0.1)
+        }
         ClockMode::Recorded {
             buckets,
             fallback_quantum_ms,
@@ -430,8 +491,28 @@ fn configure_callbacks(clock: &ClockMode) {
                 .flat_map(|bucket| std::iter::repeat_n(bucket.value_ms, bucket.repeat as usize))
                 .collect::<Vec<_>>();
             let start = values.first().copied().unwrap_or(0.0);
-            (start, *fallback_quantum_ms, values, *fallback_repeats)
+            (
+                start,
+                *fallback_quantum_ms,
+                values,
+                *fallback_repeats,
+                None,
+                0.0,
+                0.1,
+            )
         }
+        ClockMode::SystemMonotonic {
+            start_ms,
+            quantum_ms,
+        } => (
+            *start_ms,
+            *quantum_ms,
+            Vec::new(),
+            1,
+            Some(Instant::now()),
+            *start_ms,
+            *quantum_ms,
+        ),
     };
     CALLBACK_STATE.with(|state| {
         *state.borrow_mut() = CallbackState {
@@ -441,6 +522,9 @@ fn configure_callbacks(clock: &ClockMode) {
             clock_index: 0,
             clock_fallback_repeats,
             clock_fallback_count: 0,
+            clock_system_started,
+            clock_system_start_ms,
+            clock_system_quantum_ms,
             observation_sequence: 0,
             observations: Vec::new(),
         };
@@ -577,6 +661,17 @@ fn performance_now_callback(
 ) {
     let value = CALLBACK_STATE.with(|state| {
         let mut state = state.borrow_mut();
+        if let Some(started) = state.clock_system_started {
+            let elapsed_ms = started.elapsed().as_secs_f64() * 1_000.0;
+            let quantized_elapsed = if state.clock_system_quantum_ms > 0.0 {
+                (elapsed_ms / state.clock_system_quantum_ms).floor() * state.clock_system_quantum_ms
+            } else {
+                elapsed_ms
+            };
+            let value = (state.clock_system_start_ms + quantized_elapsed).max(state.clock_next_ms);
+            state.clock_next_ms = value;
+            return value;
+        }
         if let Some(value) = state.clock_recorded.get(state.clock_index).copied() {
             state.clock_index += 1;
             state.clock_next_ms = value;
@@ -1221,6 +1316,22 @@ impl RuntimeConfig {
                 if !valid {
                     return Err(RuntimeError::Configuration(
                         "recorded clock requires ordered finite buckets, positive repeats, and a non-negative fallback quantum"
+                            .to_owned(),
+                    ));
+                }
+            }
+            ClockMode::SystemMonotonic {
+                start_ms,
+                quantum_ms,
+            } => {
+                if !start_ms.is_finite()
+                    || *start_ms < 0.0
+                    || !quantum_ms.is_finite()
+                    || *quantum_ms <= 0.0
+                    || *quantum_ms > 1.0
+                {
+                    return Err(RuntimeError::Configuration(
+                        "system-monotonic clock requires finite start_ms >= 0 and quantum_ms in (0, 1]"
                             .to_owned(),
                     ));
                 }
