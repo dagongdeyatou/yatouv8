@@ -112,6 +112,11 @@ with open("execution-trace.json", "w", encoding="utf-8") as output:
 最终 Chrome oracle 验收。完整字段见
 [动态 eval execution trace](docs/evidence/execution-tracing.md)。
 
+对完整 Google SG_SS challenge，不要把 `window.sgs !== undefined` 或所有
+`undefined` outcome 当作成功门槛。使用
+[Google VM 终态谓词](docs/evidence/google-vm-terminal-predicates.md) 验证最终
+`knitsail`、`td`、`SG_SS` Cookie 与导航链路。
+
 不扩充 trace、直接比较最可能阻断 `td` 初始化的 API 语义：
 
 ```powershell
