@@ -61,6 +61,59 @@ class GoogleVmAcceptanceTests(unittest.TestCase):
         self.assertFalse(runner.valid_td('{"ns":104,"rs":100}'))
         self.assertFalse(runner.valid_td("{}"))
 
+    def test_pending_navigation_requires_same_entrypoint_and_sei(self) -> None:
+        source_url = "https://www.google.com.hk/search?q=kiss+site:imdb.com"
+        self.assertTrue(runner.valid_pending_navigation(
+            {
+                "from": source_url,
+                "kind": "replace",
+                "url": source_url + "&sei=fixture",
+            },
+            source_url=source_url,
+        ))
+        self.assertFalse(runner.valid_pending_navigation(
+            {
+                "from": source_url,
+                "kind": "replace",
+                "url": "https://example.test/search?q=fixture&sei=fixture",
+            },
+            source_url=source_url,
+        ))
+        self.assertFalse(runner.valid_pending_navigation(
+            {
+                "from": source_url,
+                "kind": "replace",
+                "url": source_url,
+            },
+            source_url=source_url,
+        ))
+
+    def test_cookie_record_redacts_token(self) -> None:
+        record = runner.redacted_cookie_record({
+            "name": "SG_SS",
+            "value": "*secret-token",
+            "domain": "www.google.com.hk",
+            "path": "/",
+        })
+
+        self.assertNotIn("value", record)
+        self.assertEqual(record["value_prefix"], "*")
+        self.assertEqual(record["value_length"], 13)
+        self.assertEqual(len(record["value_sha256"]), 64)
+
+    def test_handoff_cookie_requires_challenge_host_scope(self) -> None:
+        source_url = "https://www.google.com.hk/search?q=fixture"
+        cookie = {
+            "name": "SG_SS",
+            "value": "*secret-token",
+            "domain": ".www.google.com.hk",
+            "path": "/",
+        }
+
+        self.assertTrue(runner.valid_sg_ss_handoff_cookie(cookie, source_url=source_url))
+        cookie["domain"] = "example.test"
+        self.assertFalse(runner.valid_sg_ss_handoff_cookie(cookie, source_url=source_url))
+
 
 if __name__ == "__main__":
     unittest.main()

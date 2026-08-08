@@ -9,6 +9,7 @@ import json
 import pathlib
 import re
 from typing import Any
+from urllib.parse import parse_qsl, urlsplit
 
 import yatouv8
 
@@ -111,6 +112,63 @@ def valid_td(td_json: str | None) -> bool:
     )
 
 
+def valid_pending_navigation(
+    navigation: dict[str, Any] | None,
+    *,
+    source_url: str,
+) -> bool:
+    """Validate the host-boundary redirect produced by the challenge."""
+
+    if not (
+        isinstance(navigation, dict)
+        and navigation.get("kind") == "replace"
+        and navigation.get("from") == source_url
+        and isinstance(navigation.get("url"), str)
+    ):
+        return False
+    source = urlsplit(source_url)
+    destination = urlsplit(navigation["url"])
+    source_query = dict(parse_qsl(source.query, keep_blank_values=True))
+    destination_query = dict(parse_qsl(destination.query, keep_blank_values=True))
+    return bool(
+        (destination.scheme, destination.netloc, destination.path)
+        == (source.scheme, source.netloc, source.path)
+        and all(destination_query.get(key) == value for key, value in source_query.items())
+        and destination_query.get("sei")
+    )
+
+
+def valid_sg_ss_handoff_cookie(cookie: dict[str, Any], *, source_url: str) -> bool:
+    """Check that an exported SG_SS record is scoped to the challenge host."""
+
+    hostname = (urlsplit(source_url).hostname or "").lower()
+    domain = str(cookie.get("domain", "")).lstrip(".").lower()
+    return bool(
+        cookie.get("name") == "SG_SS"
+        and str(cookie.get("value", "")).startswith("*")
+        and domain == hostname
+        and cookie.get("path") == "/"
+    )
+
+
+def redacted_cookie_record(cookie: dict[str, Any]) -> dict[str, Any]:
+    """Retain cookie handoff metadata without persisting the challenge token."""
+
+    value = str(cookie.get("value", ""))
+    return {
+        "name": cookie.get("name"),
+        "domain": cookie.get("domain"),
+        "path": cookie.get("path"),
+        "secure": cookie.get("secure"),
+        "httpOnly": cookie.get("httpOnly"),
+        "sameSite": cookie.get("sameSite"),
+        "expires": cookie.get("expires"),
+        "value_prefix": value[:1],
+        "value_length": len(value),
+        "value_sha256": hashlib.sha256(value.encode()).hexdigest(),
+    }
+
+
 def main() -> int:
     arguments = parse_arguments()
     html = arguments.html.read_text(encoding="utf-8")
@@ -154,9 +212,12 @@ def main() -> int:
         trace = runtime.trace
         knitsail_type = runtime.eval("typeof window.knitsail")
         cookie = runtime.eval("document.cookie") or ""
+        exported_cookies = runtime.export_cookies()
+        pending_navigation = runtime.pending_navigation
 
     summarized_trace = trace_summary(trace)
     gate = source_gate_evidence(selected)
+    sg_ss_records = [cookie for cookie in exported_cookies if cookie.get("name") == "SG_SS"]
     predicates = {
         "scripts_return_without_exception": not eval_errors,
         "knitsail_initialized": knitsail_type == "object",
@@ -164,6 +225,14 @@ def main() -> int:
         "sg_ss_cookie_generated": cookie.startswith("SG_SS=*") and len(cookie) > 100,
         "cookie_set_observed": bool(summarized_trace["cookie_set_indices"]),
         "navigation_replace_observed": bool(summarized_trace["location_replace_indices"]),
+        "structured_sg_ss_ready_for_session_handoff": bool(
+            len(sg_ss_records) == 1
+            and valid_sg_ss_handoff_cookie(sg_ss_records[0], source_url=arguments.url)
+        ),
+        "pending_navigation_ready_for_http_handoff": valid_pending_navigation(
+            pending_navigation,
+            source_url=arguments.url,
+        ),
         # `sgs` is only selected when both page-provided gate inputs are
         # non-empty. It is intentionally not a universal terminal predicate.
         "sgs_gate_consistent_with_page_input": (
@@ -172,7 +241,7 @@ def main() -> int:
     }
     accepted = all(predicates.values())
     artifact = {
-        "schema": "yatouv8-google-vm-acceptance/v1",
+        "schema": "yatouv8-google-vm-acceptance/v2",
         "input": {
             "path": str(arguments.html.resolve()),
             "sha256": hashlib.sha256(html.encode()).hexdigest(),
@@ -190,6 +259,10 @@ def main() -> int:
             "cookie_prefix": cookie[:8],
             "cookie_length": len(cookie),
             "cookie_sha256": hashlib.sha256(cookie.encode()).hexdigest(),
+            "exported_sg_ss": (
+                redacted_cookie_record(sg_ss_records[0]) if len(sg_ss_records) == 1 else None
+            ),
+            "pending_navigation": pending_navigation,
         },
         "source_gate_evidence": gate,
         "trace": summarized_trace,
@@ -214,6 +287,7 @@ def main() -> int:
             "cookie_set_indices": summarized_trace["cookie_set_indices"],
             "location_replace_indices": summarized_trace["location_replace_indices"],
         },
+        "pending_navigation": pending_navigation,
         "source_gate_evidence": gate,
     }, ensure_ascii=False, indent=2))
     return 0 if accepted else 1

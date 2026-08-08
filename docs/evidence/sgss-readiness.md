@@ -48,7 +48,9 @@ metadata，不等价于 12,841 个成员都具有完整 Chromium 行为。当前
 
 本地门禁不硬编码 `window.td`、`window.sgs` 或真实 `SG_SS`。最终在线第二跳仍必须使用
 同一时刻取得的首次 `/search` 响应、脚本资源、Cookie 和 `location.replace` URL。
-2026-08-08 本机对 `https://www.google.com/search?q=yatouv8` 的单次
-`curl_cffi` 探测在 20 秒后连接超时，因此没有伪造“在线 SearchResultsPage 已通过”的结论。
+2026-08-08 本机再次执行在线二跳：经 `127.0.0.1:7897` 访问
+`www.google.com.hk:443` 时代理端中止 TLS，直连则在 20 秒后超时。失败记录位于
+`.yatou/evidence/google-vm-execution/live-handoff.json`，因此没有伪造“在线
+SearchResultsPage 已通过”的结论。
 拿到可访问的挑战响应后，可直接使用 `Runtime.eval_challenge()`、`import_cookies()`、
 `export_cookies(session)` 和 `take_navigation()` 完成同会话第二跳验收。
