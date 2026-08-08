@@ -14,9 +14,11 @@ fn main() {
     assert!(result.ok, "JavaScript exception: {result:?}");
     let report: Value =
         serde_json::from_str(result.json.as_deref().expect("JSON result")).expect("decode report");
-    assert_eq!(report["expected"], 1_785);
-    assert_eq!(report["present"], 1_785);
-    assert_eq!(report["descriptorExact"], 1_785);
+    let expected_members = u64::try_from(yatou_surface::GENERATED_MEMBERS.len())
+        .expect("generated member count fits u64");
+    assert_eq!(report["expected"].as_u64(), Some(expected_members));
+    assert_eq!(report["present"].as_u64(), Some(expected_members));
+    assert_eq!(report["descriptorExact"].as_u64(), Some(expected_members));
     assert_eq!(report["callableExpected"], report["callableExact"]);
     assert_eq!(report["failureCount"], 0);
     println!(

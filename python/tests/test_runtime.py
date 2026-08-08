@@ -373,6 +373,27 @@ class RuntimeTests(unittest.TestCase):
             )
             self.assertEqual(runtime.get_trace_stats["dropped"], 0)
 
+    def test_trace_names_intrinsic_namespaces_instead_of_object_prototype(self) -> None:
+        config = yatouv8.RuntimeConfig(
+            get_trace=yatouv8.GetTraceConfig(enabled=True, max_events=100)
+        )
+        with yatouv8.Runtime(config) as runtime:
+            runtime.eval(
+                "Math.random();"
+                "JSON.stringify({answer:42});"
+                "Reflect.ownKeys({x:1})"
+            )
+            reads = {
+                (event["entry"].get("target"), event["entry"].get("member"))
+                for event in runtime.trace["events"]
+                if event["level"] == "l1"
+                and event["entry"].get("operation") == "get"
+            }
+
+        self.assertIn(("Math", "random"), reads)
+        self.assertIn(("JSON", "stringify"), reads)
+        self.assertNotIn(("Object.prototype", "random"), reads)
+
     def test_recorded_clock_cookie_navigation_and_challenge_handoff(self) -> None:
         config = yatouv8.RuntimeConfig(
             url="https://www.google.com/search?q=yatouv8",

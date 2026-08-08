@@ -50,6 +50,21 @@ Baseline：`win11-chrome150.0.7871.188-headless-m2-v2`
 .yatou/evidence/baselines/win11-chrome150.0.7871.188-headful-m2-v2/runs/20260807T114946.259886Z-02b44a1e/
 ```
 
+## v3-full 全量 surface 扩展
+
+固定 29 面的 v2 基线保留为历史核心基线。VM 覆盖使用新的 headful 全量采集：
+
+- baseline：`win11-chrome150.0.7871.188-headful-m2-v3-full`
+- run：`20260808T063559.250211Z-aca4ebfd`
+- snapshot SHA-256：`4d6287f79a5a4f9b0d918e10348fb8ff40fe6c35a8a03854833df438ac7c5417`
+- surfaces：1,469；prototype：731；descriptors：12,841
+- `globalThis` 污染：added 0 / removed 0
+- Chrome 临时 profile 清理：已验证
+
+```text
+.yatou/evidence/baselines/win11-chrome150.0.7871.188-headful-m2-v3-full/runs/20260808T063559.250211Z-aca4ebfd/
+```
+
 第一次 headful 候选 `headful-m2-v1` 因 `--remote-debugging-port=0` 导致 `navigator.webdriver=true`，已明确拒绝。v2 改用随机非零 loopback CDP 端口，消除了该采集器诱发字段。
 
 ## 验证方法

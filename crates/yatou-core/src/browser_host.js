@@ -399,24 +399,38 @@
     }));
   }, false);
 
+  const eventState = new WeakMapIntrinsic();
+  const eventData = event => {
+    const state = eventState.get(event);
+    if (!state) throw new TypeErrorIntrinsic("Illegal invocation");
+    return state;
+  };
+
   class Event {
     constructor(type, init = {}) {
-      this.type = stringValue(type);
-      this.bubbles = booleanValue(init.bubbles);
-      this.cancelable = booleanValue(init.cancelable);
-      this.composed = booleanValue(init.composed);
-      this.defaultPrevented = false;
-      this.target = null;
-      this.currentTarget = null;
-      this.eventPhase = 0;
-      this.isTrusted = false;
-      this.timeStamp = performance.now();
-      this._stopped = false;
-      this._immediateStopped = false;
+      eventState.set(this, {
+        type: stringValue(type), bubbles: booleanValue(init.bubbles),
+        cancelable: booleanValue(init.cancelable), composed: booleanValue(init.composed),
+        defaultPrevented: false, target: null, currentTarget: null, eventPhase: 0,
+        isTrusted: false, timeStamp: performance.now(), stopped: false,
+        immediateStopped: false, detail: null
+      });
     }
-    preventDefault() { if (this.cancelable) this.defaultPrevented = true; }
-    stopPropagation() { this._stopped = true; }
-    stopImmediatePropagation() { this._stopped = this._immediateStopped = true; }
+    get type() { return eventData(this).type; }
+    get bubbles() { return eventData(this).bubbles; }
+    get cancelable() { return eventData(this).cancelable; }
+    get composed() { return eventData(this).composed; }
+    get defaultPrevented() { return eventData(this).defaultPrevented; }
+    get target() { return eventData(this).target; }
+    get currentTarget() { return eventData(this).currentTarget; }
+    get eventPhase() { return eventData(this).eventPhase; }
+    get isTrusted() { return eventData(this).isTrusted; }
+    get timeStamp() { return eventData(this).timeStamp; }
+    preventDefault() { const state = eventData(this); if (state.cancelable) state.defaultPrevented = true; }
+    stopPropagation() { eventData(this).stopped = true; }
+    stopImmediatePropagation() {
+      const state = eventData(this); state.stopped = true; state.immediateStopped = true;
+    }
   }
   data(Event, "NONE", 0);
   data(Event, "CAPTURING_PHASE", 1);
@@ -426,17 +440,31 @@
   class CustomEvent extends Event {
     constructor(type, init = {}) {
       super(type, init);
-      this.detail = init.detail === undefined ? null : init.detail;
+      eventData(this).detail = init.detail === undefined ? null : init.detail;
     }
+    get detail() { return eventData(this).detail; }
   }
 
-  class MouseEvent extends Event {
+  class UIEvent extends Event {
+    constructor(type, init = {}) {
+      super(type, init);
+      const state = eventData(this);
+      state.view = init.view || null;
+      state.detail = numberValue(init.detail || 0);
+      state.which = numberValue(init.which || 0);
+    }
+    get view() { return eventData(this).view; }
+    get detail() { return eventData(this).detail; }
+    get which() { return eventData(this).which; }
+  }
+
+  class MouseEvent extends UIEvent {
     constructor(type, init = {}) {
       super(type, init);
       for (const key of ["screenX", "screenY", "clientX", "clientY", "button", "buttons", "movementX", "movementY"])
-        this[key] = numberValue(init[key] || 0);
+        eventData(this)[key] = numberValue(init[key] || 0);
       for (const key of ["ctrlKey", "shiftKey", "altKey", "metaKey"])
-        this[key] = booleanValue(init[key]);
+        eventData(this)[key] = booleanValue(init[key]);
     }
   }
 
@@ -471,19 +499,20 @@
     dispatchEvent(event) {
       if (!(event instanceof Event)) throw new TypeErrorIntrinsic("parameter 1 is not of type 'Event'");
       logApi("EventTarget.prototype", "dispatchEvent", "call", [event], true);
-      if (!event.target) event.target = this;
-      event.currentTarget = this;
-      event.eventPhase = Event.AT_TARGET;
+      const state = eventData(event);
+      if (!state.target) state.target = this;
+      state.currentTarget = this;
+      state.eventPhase = Event.AT_TARGET;
       const entries = ArrayIntrinsic.from(listenersFor(this).get(event.type) || []);
       for (const entry of entries) {
         if (entry.once) this.removeEventListener(event.type, entry.callback, { capture: entry.capture });
         if (typeof entry.callback === "function") entry.callback.call(this, event);
         else if (entry.callback && typeof entry.callback.handleEvent === "function") entry.callback.handleEvent(event);
-        if (event._immediateStopped) break;
+        if (state.immediateStopped) break;
       }
-      event.eventPhase = Event.NONE;
-      event.currentTarget = null;
-      return !event.defaultPrevented;
+      state.eventPhase = Event.NONE;
+      state.currentTarget = null;
+      return !state.defaultPrevented;
     }
   }
 
@@ -589,14 +618,20 @@
     DOCUMENT_FRAGMENT_NODE: 11
   });
 
-  class Text extends Node {
-    constructor(dataValue = "", ownerDocument = null) {
-      super(Node.TEXT_NODE, "#text", ownerDocument);
+  class CharacterData extends Node {
+    constructor(dataValue = "", ownerDocument = null, nodeName = "#text") {
+      super(Node.TEXT_NODE, nodeName, ownerDocument);
       nodeData(this).text = stringValue(dataValue);
     }
     get data() { return nodeData(this).text; }
     set data(value) { nodeData(this).text = stringValue(value); }
     get length() { return nodeData(this).text.length; }
+  }
+
+  class Text extends CharacterData {
+    constructor(dataValue = "", ownerDocument = null) {
+      super(dataValue, ownerDocument, "#text");
+    }
   }
 
   class DocumentFragment extends Node {
@@ -990,22 +1025,44 @@
     return output;
   };
 
+  const responseState = new WeakMapIntrinsic();
+  const responseData = response => {
+    const state = responseState.get(response);
+    if (!state) throw new TypeErrorIntrinsic("Illegal invocation");
+    return state;
+  };
+
   class Response {
     constructor(body = [], init = {}) {
-      this._body = ArrayIntrinsic.from(body || [], value => numberValue(value) & 255);
-      this.status = numberValue(init.status ?? 200);
-      this.statusText = stringValue(init.statusText || "");
-      this.headers = new Headers(init.headers || {});
-      this.url = stringValue(init.url || "");
-      this.type = "basic";
-      this.redirected = false;
-      this.bodyUsed = false;
+      responseState.set(this, {
+        bodyBytes: ArrayIntrinsic.from(body || [], value => numberValue(value) & 255),
+        status: numberValue(init.status ?? 200), statusText: stringValue(init.statusText || ""),
+        headers: new Headers(init.headers || {}), url: stringValue(init.url || ""),
+        type: "basic", redirected: false, bodyUsed: false, body: null
+      });
     }
-    get ok() { return this.status >= 200 && this.status <= 299; }
-    async text() { this.bodyUsed = true; return utf8Decode(this._body); }
+    get status() { return responseData(this).status; }
+    get statusText() { return responseData(this).statusText; }
+    get headers() { return responseData(this).headers; }
+    get url() { return responseData(this).url; }
+    get type() { return responseData(this).type; }
+    get redirected() { return responseData(this).redirected; }
+    get bodyUsed() { return responseData(this).bodyUsed; }
+    get body() { return responseData(this).body; }
+    get ok() { const status = responseData(this).status; return status >= 200 && status <= 299; }
+    async text() { const state = responseData(this); state.bodyUsed = true; return utf8Decode(state.bodyBytes); }
     async json() { return JSONIntrinsic.parse(await this.text()); }
-    async arrayBuffer() { this.bodyUsed = true; return Uint8ArrayIntrinsic.from(this._body).buffer; }
-    clone() { return new Response(this._body, { status: this.status, statusText: this.statusText, headers: ObjectIntrinsic.fromEntries(this.headers), url: this.url }); }
+    async arrayBuffer() {
+      const state = responseData(this); state.bodyUsed = true;
+      return Uint8ArrayIntrinsic.from(state.bodyBytes).buffer;
+    }
+    clone() {
+      const state = responseData(this);
+      return new Response(state.bodyBytes, {
+        status: state.status, statusText: state.statusText,
+        headers: ObjectIntrinsic.fromEntries(state.headers), url: state.url
+      });
+    }
   }
 
   async function fetch(input, init = {}) {
@@ -1092,9 +1149,11 @@
   for (const [constructor, name] of [
     [Event, "Event"],
     [CustomEvent, "CustomEvent"],
+    [UIEvent, "UIEvent"],
     [MouseEvent, "MouseEvent"],
     [EventTarget, "EventTarget"],
     [Node, "Node"],
+    [CharacterData, "CharacterData"],
     [Text, "Text"],
     [DocumentFragment, "DocumentFragment"],
     [DOMTokenList, "DOMTokenList"],
@@ -1288,9 +1347,11 @@
   data(globalObject, "crossOriginIsolated", false);
   data(globalObject, "Event", Event);
   data(globalObject, "CustomEvent", CustomEvent);
+  data(globalObject, "UIEvent", UIEvent);
   data(globalObject, "MouseEvent", MouseEvent);
   data(globalObject, "EventTarget", EventTarget);
   data(globalObject, "Node", Node);
+  data(globalObject, "CharacterData", CharacterData);
   data(globalObject, "Text", Text);
   data(globalObject, "DocumentFragment", DocumentFragment);
   data(globalObject, "Element", Element);
@@ -1360,7 +1421,9 @@
       "Symbol(Symbol.search)": Symbol.search,
       "Symbol(Symbol.species)": Symbol.species,
       "Symbol(Symbol.split)": Symbol.split,
-      "Symbol(Symbol.unscopables)": Symbol.unscopables
+      "Symbol(Symbol.unscopables)": Symbol.unscopables,
+      "Symbol(Symbol.dispose)": Symbol.dispose,
+      "Symbol(Symbol.asyncDispose)": Symbol.asyncDispose
     };
     return wellKnown[key.display] || Symbol(key.description || "");
   };
@@ -1380,6 +1443,10 @@
     if (element && ObjectIntrinsic.prototype.hasOwnProperty.call(element, key)) return element[key];
     const documentValues = documentState.get(receiver);
     if (documentValues && ObjectIntrinsic.prototype.hasOwnProperty.call(documentValues, key)) return documentValues[key];
+    const eventValues = eventState.get(receiver);
+    if (eventValues && ObjectIntrinsic.prototype.hasOwnProperty.call(eventValues, key)) return eventValues[key];
+    const responseValues = responseState.get(receiver);
+    if (responseValues && ObjectIntrinsic.prototype.hasOwnProperty.call(responseValues, key)) return responseValues[key];
     if (path === "Navigator.prototype") {
       const values = {
         userAgent: profile.user_agent, appVersion: profile.user_agent.replace(/^Mozilla\//, ""),
@@ -1468,6 +1535,25 @@
       }
       if (objectLike(value)) surfaceObjects.set(spec.path, value);
     }
+  }
+  // Chrome exposes these historical factory functions with prototype objects
+  // aliased to their WebIDL element prototypes. Ordinary JavaScript functions
+  // receive a fresh prototype, so repair the identity before descriptors are
+  // frozen to the captured shape.
+  for (const [alias, canonical] of [
+    ["Option.prototype", "HTMLOptionElement.prototype"],
+    ["Image.prototype", "HTMLImageElement.prototype"],
+    ["Audio.prototype", "HTMLAudioElement.prototype"]
+  ]) {
+    const prototype = surfaceObjects.get(canonical);
+    const constructor = surfaceObjects.get(alias.slice(0, -10));
+    if (!objectLike(prototype) || typeof constructor !== "function") continue;
+    const descriptor = ObjectIntrinsic.getOwnPropertyDescriptor(constructor, "prototype");
+    if (descriptor && "value" in descriptor && descriptor.writable) {
+      try { ObjectIntrinsic.defineProperty(constructor, "prototype", { ...descriptor, value: prototype }); }
+      catch (_error) {}
+    }
+    surfaceObjects.set(alias, prototype);
   }
   for (const spec of interfaces) {
     const object = surfaceObjects.get(spec.path);
@@ -1584,6 +1670,19 @@
       if (descriptor && descriptor.configurable) ReflectIntrinsic.deleteProperty(globalObject, key);
     }
     for (const member of globalSpec.members) applyMember("globalThis", globalObject, member);
+    // Namespace singletons such as Math, JSON, Reflect, Atomics and Intl do
+    // not have dedicated interface rows in the first surface baseline. Give
+    // their actual global values a direct semantic identity; otherwise owner
+    // resolution walks into Object.prototype and reports misleading targets
+    // such as Object.prototype.random for Math.random.
+    for (const member of globalSpec.members) {
+      const key = manifestKey(member.k);
+      if (typeof key !== "string") continue;
+      const descriptor = ObjectIntrinsic.getOwnPropertyDescriptor(globalObject, key);
+      if (!descriptor || !("value" in descriptor)) continue;
+      const value = rawTraceValue(descriptor.value);
+      if (objectLike(value) && !traceTargets.has(value)) registerTraceTarget(value, key);
+    }
   }
 
   if (getTraceConfig.enabled) {

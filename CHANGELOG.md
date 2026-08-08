@@ -16,3 +16,6 @@
 - Added SG_SS-oriented reflection tracing, private runtime bridges, generated
   runtime-surface installation, recorded Chrome clock replay, structured Cookie/
   navigation handoff, and local final acceptance gates.
+- Replaced the fixed 29-interface surface ceiling with a verified Chrome 150
+  headful full-surface capture: 1,469 surfaces, 12,841 descriptors, and 9,565
+  callable/accessor metadata entries; fixed intrinsic namespace trace ownership.

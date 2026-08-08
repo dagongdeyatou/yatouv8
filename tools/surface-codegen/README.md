@@ -6,7 +6,7 @@ M5 工具：读取经过验证的 Surface Manifest，生成 constructor/prototyp
 
 ```powershell
 python tools/surface-codegen/generate.py `
-  --snapshot .yatou/evidence/baselines/win11-chrome150.0.7871.188-headful-m2-v2/runs/20260807T114946.259886Z-02b44a1e/snapshot.json `
+  --snapshot .yatou/evidence/baselines/win11-chrome150.0.7871.188-headful-m2-v3-full/runs/20260808T063559.250211Z-aca4ebfd/snapshot.json `
   --manifest manifests/chrome150.surface.json `
   --rust crates/yatou-surface/src/generated/chrome150.rs `
   --runtime manifests/chrome150.runtime-surface.json

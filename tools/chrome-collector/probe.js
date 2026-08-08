@@ -4,7 +4,7 @@
   const ownDescriptor = Object.getOwnPropertyDescriptor;
   const ownKeys = Reflect.ownKeys;
   const functionToString = Function.prototype.toString;
-  const surfacePaths = [
+  const seedSurfacePaths = [
     "globalThis",
     "Object",
     "Object.prototype",
@@ -35,6 +35,38 @@
     "Storage",
     "Storage.prototype",
   ];
+
+  // The first M2 baseline intentionally covered only a small hand-picked
+  // browser spine. That is sufficient for harness validation but not for a
+  // VM which walks every exposed WebIDL brand. Discover every global
+  // constructor and its prototype from data descriptors without invoking a
+  // single accessor. Namespace singletons are included explicitly because
+  // they have no `.prototype` object.
+  const namespaceSingletons = new Set([
+    "Atomics", "Intl", "JSON", "Math", "Reflect", "WebAssembly",
+  ]);
+  const discoveredSurfacePaths = [];
+  for (const key of ownKeys(globalThis)) {
+    if (typeof key !== "string" || key.includes(".")) continue;
+    const descriptor = ownDescriptor(globalThis, key);
+    if (!descriptor || !Object.hasOwn(descriptor, "value")) continue;
+    const value = descriptor.value;
+    if (value === globalThis) continue;
+    if (typeof value === "function") {
+      let prototype;
+      try {
+        prototype = value.prototype;
+      } catch {
+        continue;
+      }
+      if ((typeof prototype === "object" && prototype !== null) || typeof prototype === "function") {
+        discoveredSurfacePaths.push(key, `${key}.prototype`);
+      }
+    } else if (namespaceSingletons.has(key) && value !== null && typeof value === "object") {
+      discoveredSurfacePaths.push(key);
+    }
+  }
+  const surfacePaths = [...new Set([...seedSurfacePaths, ...discoveredSurfacePaths])];
 
   function boundedText(value, limit = 512) {
     const text = String(value);

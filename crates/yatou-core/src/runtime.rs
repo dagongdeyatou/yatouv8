@@ -1529,7 +1529,7 @@ struct SessionTrace {
 
 impl SessionTrace {
     fn new(config: &RuntimeConfig) -> Result<Self, String> {
-        let baseline_id = BaselineId::parse("win11-chrome150.0.7871.188-headful-m2-v2")
+        let baseline_id = BaselineId::parse(yatou_surface::GENERATED_BASELINE_ID)
             .map_err(|error| error.to_string())?;
         Ok(Self {
             recorder: TraceRecorder::new(TraceHeader {
@@ -1827,7 +1827,7 @@ fn runtime_worker(
             "time_origin_ms": config.time_origin_ms,
             "random_seed": config.random_seed,
             "get_trace": config.get_trace,
-            "baseline": "win11-chrome150.0.7871.188-headful-m2-v2",
+            "baseline": yatou_surface::GENERATED_BASELINE_ID,
             "surface_manifest": surface_manifest,
         });
         let bootstrap_config = serde_json::to_string(&bootstrap_config)

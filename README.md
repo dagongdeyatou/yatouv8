@@ -3,8 +3,8 @@
 > 当前状态：M0–M10 已完成，发布版本 `0.1.0`。已验证一条**公开归档的真实
 > Google reCAPTCHA BotGuard VM** 路径、Chrome 150 的 M8 宿主语义，以及
 > 2026-08-07 当前公开 Google/recaptcha.net loader。当前在线 challenge 与私有
-> BotGuard bytecode 仍不在完成声明内。SG_SS 定向本地门禁已达到 1,785/1,785
-> descriptor、2,169/2,169 callable metadata 和 0 failure。
+> BotGuard bytecode 仍不在完成声明内。SG_SS 定向本地门禁已达到 12,841/12,841
+> descriptor、9,565/9,565 callable metadata 和 0 failure。
 
 `yatouv8` 是面向 Windows 11 + Chrome 150 的证据驱动型 V8 浏览器宿主：先采集 Chrome 行为，再通过差异、因果 blocker、Manifest 和生成器收敛兼容层。
 
@@ -19,7 +19,7 @@
 | M2 Chrome evidence | 完成 | headful Chrome 150 基线、重复稳定性与 clock distribution 已验证 |
 | M3 Trace spine | 完成 | L0 strict replay、L1 API ledger、NDJSON Schema 与 inspector 已验证 |
 | M4 Diff/ranking | 完成 | typed trace diff、checkpoint diff 与因果 blocker ranking 已验证 |
-| M5 Surface generator | 完成 | 29 interfaces / 1,785 descriptors、lineage 与 L1 trampoline 已生成并验证 |
+| M5 Surface generator | 完成 | 1,469 surfaces / 12,841 descriptors、lineage 与 L1 trampoline 已生成并验证 |
 | M6 首条真实路径 | 完成（归档目标） | Chrome 150 与 yatouv8 的 7/7 BotGuard trace 事件一致，strict replay 全消费 |
 | M7 SDK/runtime | 完成 | owner thread、persistent Context、Python SDK、资源注入、GIL 释放与 wheel 测试 |
 | M8 Host semantics | 完成 | DOM/CSSOM/Event/Timer/Storage/Cookie/Fetch 最小语义；Chrome/yatouv8 probe 哈希一致 |
@@ -148,7 +148,7 @@ M3 的边界与验证结果见 [M3 Trace spine](docs/evidence/m3-trace-spine.md)
 
 ```powershell
 python tools/surface-codegen/generate.py `
-  --snapshot .yatou/evidence/baselines/win11-chrome150.0.7871.188-headful-m2-v2/runs/20260807T114946.259886Z-02b44a1e/snapshot.json `
+  --snapshot .yatou/evidence/baselines/win11-chrome150.0.7871.188-headful-m2-v3-full/runs/20260808T063559.250211Z-aca4ebfd/snapshot.json `
   --manifest manifests/chrome150.surface.json `
   --rust crates/yatou-surface/src/generated/chrome150.rs `
   --runtime manifests/chrome150.runtime-surface.json

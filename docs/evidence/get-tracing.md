@@ -59,6 +59,9 @@ get  Screen.prototype      width
 Proxy invariant；内部槽对象不做代理。`window === globalThis`、构造器 `instanceof`、
 全局 data/accessor descriptor 和 tracing 关闭时的返回结果都有正向/负向回归。
 
+内建 namespace 保留直接语义 owner：`Math.random` 的 target 是 `Math`，
+`JSON.stringify` 的 target 是 `JSON`，不再沿继承链误报为 `Object.prototype`。
+
 ## 时序与预算
 
 Rust native callback 与 JS host logger 从同一 `u32` 序号器取号。每次 `eval` 或

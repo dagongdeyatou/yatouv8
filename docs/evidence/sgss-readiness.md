@@ -10,9 +10,9 @@
 
 | Predicate | 结果 |
 | --- | --- |
-| Chrome 150 runtime surface | 29 interfaces / 1,785 members 全部存在 |
-| descriptor 基本形状 | 1,785 / 1,785 精确匹配 |
-| callable/getter/setter metadata | 2,169 / 2,169 精确匹配 |
+| Chrome 150 runtime surface | 1,469 surfaces / 12,841 members 全部存在 |
+| descriptor 基本形状 | 12,841 / 12,841 精确匹配 |
+| callable/getter/setter metadata | 9,565 / 9,565 精确匹配 |
 | `globalThis` own keys | 981，集合及 observable 顺序与已接纳基线一致 |
 | 内部全局泄漏 | `__yatou*`、`_listeners` 为 0 |
 | brands | Navigator、Screen、Location、Performance、Document 匹配 |
@@ -26,6 +26,11 @@
 `yatou-core` 现在直接依赖 `yatou-surface`；启动时同时校验生成 Rust 表和
 `manifests/chrome150.runtime-surface.json` 的 baseline/member count，二者不一致即拒绝启动。
 运行时 host bridge 保存在 V8 private state，不再依赖 JS 可见的 `__yatou*` 属性。
+
+这里的 12,841/12,841 证明的是 presence、own-key 顺序、descriptor 和 callable
+metadata，不等价于 12,841 个成员都具有完整 Chromium 行为。当前在线 VM 是否激活仍以
+同一脚本的 first-divergence trace 为准；调用量下降只能说明更早分支退出，不能用门禁
+总数替代行为证据。
 
 ## SG_SS 本地流程
 

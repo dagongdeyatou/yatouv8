@@ -16,7 +16,7 @@ pub struct BuildInfo {
 pub const fn build_info() -> BuildInfo {
     BuildInfo {
         version: env!("CARGO_PKG_VERSION"),
-        baseline: "win11-chrome150.0.7871.188-headful-m2-v2",
+        baseline: yatou_surface::GENERATED_BASELINE_ID,
         v8_crate: "150.4.0",
     }
 }
