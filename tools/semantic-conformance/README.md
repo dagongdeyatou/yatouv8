@@ -11,4 +11,6 @@ python tools/semantic-conformance/runner.py `
 ```
 
 The report records all three results plus leaf-level Chrome-to-candidate diffs.
-It also verifies that the isolated Chrome process was cleaned up.
+It also verifies that the isolated Chrome process was cleaned up. The raw
+`document.hasFocus()` value is retained, but comparison normalizes it to its
+boolean contract because foreground focus belongs to the collector desktop.

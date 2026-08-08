@@ -54,6 +54,28 @@ class BrowserProfile:
     screen_avail_width: int = 1920
     screen_avail_height: int = 1032
     screen_depth: int = 24
+    navigation_timing: dict[str, int | None] = field(default_factory=lambda: {
+        "connect_start": 3,
+        "secure_connection_start": None,
+        "unload_event_end": None,
+        "domain_lookup_start": 3,
+        "domain_lookup_end": 3,
+        "response_start": 4,
+        "connect_end": 3,
+        "response_end": 4,
+        "request_start": 3,
+        "dom_loading": 14,
+        "redirect_start": None,
+        "load_event_end": 18,
+        "dom_complete": 18,
+        "load_event_start": 18,
+        "dom_content_loaded_event_end": 17,
+        "unload_event_start": None,
+        "redirect_end": None,
+        "dom_interactive": 17,
+        "fetch_start": 3,
+        "dom_content_loaded_event_start": 17,
+    })
     clock: dict[str, Any] = field(default_factory=lambda: {
         "mode": "recorded",
         "buckets": [

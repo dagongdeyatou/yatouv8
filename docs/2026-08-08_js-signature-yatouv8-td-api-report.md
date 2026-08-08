@@ -46,15 +46,37 @@ Chrome 150 实测普通页面中 `chrome.runtime` 和 `navigator.userAgentData` 
 下还暴露了派生构造函数经过 Proxy 后的 WeakMap receiver 偏差；本轮同时修复了
 state lookup，使 trace 开关不再改变 Canvas/DOM 语义。
 
+## `PerformanceTiming` 早退点复核
+
+针对后续 trace 中“只读取 `navigationStart`、`responseStart`，尚未进入
+`navigator.*`”的现象，复核结果不是字段缺失，而是字段值不一致：yatouv8 已经
+暴露并可逐项追踪 Chrome 的全部 21 个 legacy timing 字段，但旧默认值中
+`navigationStart` 为当前 epoch，`responseStart` 却为 `0`。这两个值正好是脚本
+早退前最后读取的字段，因此它比继续横向增加 navigator API 更接近因果 blocker。
+
+本轮增加了可配置的 `navigation_timing` profile，并采用 5 次本机 Chrome 150
+空白页面采样的众数偏移作为默认值：`fetch/request/connect=+3ms`、
+`responseStart/responseEnd=+4ms`、`domLoading=+14ms`、
+`domInteractive/DOMContentLoaded=+17ms`、`domComplete/loadEvent=+18ms`；
+未发生的 redirect、unload 和 TLS 字段继续为 `0`。安装态 wheel 已验证 21 个字段
+均可读且产生 21 条 `PerformanceTiming.prototype` GET 事件。
+
+`navigator.userAgent/plugins/webdriver` 的子属性追踪机制已通过独立测试；目标 trace
+中没有出现它们，表示脚本没有执行到这些读取，而不是 tracer 漏报。`knitsail` 也
+不是 Chrome 或 `iv8_rs` 默认提供的浏览器 API，不能凭名字伪造；它由被测页面脚本
+动态创建。此次修复的是动态对象的命名归属，使页面创建
+`knitsail.createSnapshot` 后会记录为该路径，而不再误记为
+`Object.prototype.createSnapshot`。
+
 ## 验证结果
 
 | 门禁 | 结果 |
 | --- | --- |
 | Chrome 150 vs yatouv8 候选 probe | 0 个归一化差异 |
-| Chrome 150 vs iv8_rs 候选 probe | 146 个差异；主要包含 iv8_rs 的 WebGL 对象等非 Chrome 基线行为 |
+| Chrome 150 vs iv8_rs 候选 probe | 145 个归一化差异；主要包含 iv8_rs 的 WebGL 对象等非 Chrome 基线行为 |
 | Runtime descriptor | 12,841 / 12,841 |
 | Callable metadata | 9,565 / 9,565 |
-| Python wheel tests | 14 / 14 |
+| Python wheel tests | 16 / 16 |
 | M8 host conformance | conformant，Chrome/yatouv8 哈希一致 |
 | M10 release gate | accepted |
 
@@ -62,7 +84,7 @@ state lookup，使 trace 开关不再改变 Canvas/DOM 语义。
 
 ```text
 C:\Users\wuye\Documents\yatouv8\dist\yatouv8-0.1.0-cp313-cp313-win_amd64.whl
-SHA256 361e55a145be78e411e63e093bf9db0df2c0a293c29cbb8a7d657d60bcab1982
+SHA256 c9e9f6528309cd77cf4751e04a1a4b7dc3023b1e1ea359d299430b2a95e23f55
 ```
 
 ## 复现
@@ -81,8 +103,10 @@ python -m pip install --force-reinstall --no-deps `
 本轮证据文件位于：
 
 ```text
-C:\Users\wuye\Documents\yatouv8\.yatou\evidence\semantic-conformance\report-final.json
-C:\Users\wuye\Documents\yatouv8\.yatou\evidence\reports\m10\runs\20260808T081028.974999Z-17ae97b5\m10.report.json
+C:\Users\wuye\Documents\yatouv8\.yatou\evidence\semantic-conformance\report.json
+C:\Users\wuye\Documents\yatouv8\.yatou\evidence\semantic-conformance\chrome-loaded-page-timing-5.json
+C:\Users\wuye\Documents\yatouv8\.yatou\evidence\local-semantic\timing-knitsail-probe.json
+C:\Users\wuye\Documents\yatouv8\.yatou\evidence\reports\m10\runs\20260808T093329.657776Z-a55dc481\m10.report.json
 ```
 
 ## 下一项因果验收

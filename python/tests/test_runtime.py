@@ -270,6 +270,80 @@ class RuntimeTests(unittest.TestCase):
                 ["[object PermissionStatus]", "geolocation", "prompt"],
             )
 
+    def test_performance_timing_exposes_and_traces_all_chrome_fields(self) -> None:
+        keys = [
+            "navigationStart",
+            "unloadEventStart",
+            "unloadEventEnd",
+            "redirectStart",
+            "redirectEnd",
+            "fetchStart",
+            "domainLookupStart",
+            "domainLookupEnd",
+            "connectStart",
+            "connectEnd",
+            "secureConnectionStart",
+            "requestStart",
+            "responseStart",
+            "responseEnd",
+            "domLoading",
+            "domInteractive",
+            "domContentLoadedEventStart",
+            "domContentLoadedEventEnd",
+            "domComplete",
+            "loadEventStart",
+            "loadEventEnd",
+        ]
+        config = yatouv8.RuntimeConfig(
+            get_trace=yatouv8.GetTraceConfig(enabled=True, max_events=1_000)
+        )
+        with yatouv8.Runtime(config) as runtime:
+            values = runtime.eval(
+                f"Object.fromEntries({keys!r}.map(key=>[key,performance.timing[key]]))"
+            )
+            timing_reads = [
+                event["entry"]["member"]
+                for event in runtime.trace["events"]
+                if event["level"] == "l1"
+                and event["entry"].get("target") == "PerformanceTiming.prototype"
+                and event["entry"].get("operation") == "get"
+            ]
+
+        self.assertEqual(timing_reads, keys)
+        start = values["navigationStart"]
+        self.assertEqual(values["fetchStart"], start + 3)
+        self.assertEqual(values["requestStart"], start + 3)
+        self.assertEqual(values["responseStart"], start + 4)
+        self.assertEqual(values["responseEnd"], start + 4)
+        self.assertEqual(values["domLoading"], start + 14)
+        self.assertEqual(values["domInteractive"], start + 17)
+        self.assertEqual(values["domComplete"], start + 18)
+        self.assertEqual(values["loadEventEnd"], start + 18)
+        self.assertEqual(values["redirectStart"], 0)
+        self.assertEqual(values["unloadEventStart"], 0)
+
+    def test_get_trace_names_dynamic_knitsail_namespace(self) -> None:
+        config = yatouv8.RuntimeConfig(
+            get_trace=yatouv8.GetTraceConfig(enabled=True, max_events=100)
+        )
+        with yatouv8.Runtime(config) as runtime:
+            self.assertEqual(
+                runtime.eval(
+                    "globalThis.knitsail={createSnapshot(){return 'snapshot'}};"
+                    "knitsail.createSnapshot()"
+                ),
+                "snapshot",
+            )
+            reads = {
+                (event["entry"].get("target"), event["entry"].get("member"))
+                for event in runtime.trace["events"]
+                if event["level"] == "l1"
+                and event["entry"].get("operation") == "get"
+            }
+
+        self.assertIn(("knitsail", "createSnapshot"), reads)
+        self.assertNotIn(("Object.prototype", "createSnapshot"), reads)
+
     def test_get_trace_is_opt_in_and_semantics_preserving(self) -> None:
         with yatouv8.Runtime() as runtime:
             oracle = runtime.eval(self.GET_TRACE_SOURCE)

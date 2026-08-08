@@ -27,7 +27,8 @@ mod runtime;
 #[cfg(feature = "v8-runtime")]
 pub use runtime::{
     BotguardRun, BrowserProfile, BrowserRuntime, ClockBucket, ClockMode, EvalResult,
-    GetTraceConfig, RuntimeConfig, RuntimeError, V8Error, evaluate_to_string, run_botguard,
+    GetTraceConfig, NavigationTimingProfile, RuntimeConfig, RuntimeError, V8Error,
+    evaluate_to_string, run_botguard,
 };
 
 mod host;

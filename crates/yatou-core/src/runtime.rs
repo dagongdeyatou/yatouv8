@@ -80,6 +80,81 @@ pub enum ClockMode {
     },
 }
 
+/// Relative legacy Navigation Timing values captured from a completed Chrome page.
+/// `None` represents fields for which Chrome reports the absolute value `0`.
+#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
+pub struct NavigationTimingProfile {
+    /// `connectStart` offset from `navigationStart`.
+    pub connect_start: Option<u32>,
+    /// `secureConnectionStart` offset from `navigationStart`.
+    pub secure_connection_start: Option<u32>,
+    /// `unloadEventEnd` offset from `navigationStart`.
+    pub unload_event_end: Option<u32>,
+    /// `domainLookupStart` offset from `navigationStart`.
+    pub domain_lookup_start: Option<u32>,
+    /// `domainLookupEnd` offset from `navigationStart`.
+    pub domain_lookup_end: Option<u32>,
+    /// `responseStart` offset from `navigationStart`.
+    pub response_start: Option<u32>,
+    /// `connectEnd` offset from `navigationStart`.
+    pub connect_end: Option<u32>,
+    /// `responseEnd` offset from `navigationStart`.
+    pub response_end: Option<u32>,
+    /// `requestStart` offset from `navigationStart`.
+    pub request_start: Option<u32>,
+    /// `domLoading` offset from `navigationStart`.
+    pub dom_loading: Option<u32>,
+    /// `redirectStart` offset from `navigationStart`.
+    pub redirect_start: Option<u32>,
+    /// `loadEventEnd` offset from `navigationStart`.
+    pub load_event_end: Option<u32>,
+    /// `domComplete` offset from `navigationStart`.
+    pub dom_complete: Option<u32>,
+    /// `loadEventStart` offset from `navigationStart`.
+    pub load_event_start: Option<u32>,
+    /// `domContentLoadedEventEnd` offset from `navigationStart`.
+    pub dom_content_loaded_event_end: Option<u32>,
+    /// `unloadEventStart` offset from `navigationStart`.
+    pub unload_event_start: Option<u32>,
+    /// `redirectEnd` offset from `navigationStart`.
+    pub redirect_end: Option<u32>,
+    /// `domInteractive` offset from `navigationStart`.
+    pub dom_interactive: Option<u32>,
+    /// `fetchStart` offset from `navigationStart`.
+    pub fetch_start: Option<u32>,
+    /// `domContentLoadedEventStart` offset from `navigationStart`.
+    pub dom_content_loaded_event_start: Option<u32>,
+}
+
+impl Default for NavigationTimingProfile {
+    fn default() -> Self {
+        // win11-chrome150.0.7871.188, five completed local-page captures.
+        // This is the modal fast-page profile (run 4), not invented jitter.
+        Self {
+            connect_start: Some(3),
+            secure_connection_start: None,
+            unload_event_end: None,
+            domain_lookup_start: Some(3),
+            domain_lookup_end: Some(3),
+            response_start: Some(4),
+            connect_end: Some(3),
+            response_end: Some(4),
+            request_start: Some(3),
+            dom_loading: Some(14),
+            redirect_start: None,
+            load_event_end: Some(18),
+            dom_complete: Some(18),
+            load_event_start: Some(18),
+            dom_content_loaded_event_end: Some(17),
+            unload_event_start: None,
+            redirect_end: None,
+            dom_interactive: Some(17),
+            fetch_start: Some(3),
+            dom_content_loaded_event_start: Some(17),
+        }
+    }
+}
+
 /// Minimal evidence-derived browser profile required by the M6 target.
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
 pub struct BrowserProfile {
@@ -103,6 +178,9 @@ pub struct BrowserProfile {
     pub screen_avail_height: u32,
     /// Color and pixel depth.
     pub screen_depth: u32,
+    /// Evidence-derived relative values for the legacy `PerformanceTiming` object.
+    #[serde(default)]
+    pub navigation_timing: NavigationTimingProfile,
     /// Deterministic clock profile.
     pub clock: ClockMode,
 }
@@ -122,6 +200,7 @@ impl Default for BrowserProfile {
             screen_avail_width: 1_920,
             screen_avail_height: 1_032,
             screen_depth: 24,
+            navigation_timing: NavigationTimingProfile::default(),
             clock: ClockMode::Recorded {
                 buckets: default_chrome_clock_buckets(),
                 fallback_quantum_ms: 0.1,

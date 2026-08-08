@@ -132,7 +132,10 @@
   const observeTraceValue = (value, hint = null) => {
     value = rawTraceValue(value);
     if (!getTraceConfig.enabled || !traceableValue(value, hint)) return value;
-    if (hint && !semanticTraceTarget(value)) registerTraceTarget(value, hint);
+    const existingTarget = semanticTraceTarget(value);
+    if (hint && (!existingTarget
+      || existingTarget === "Object.prototype"
+      || existingTarget === "Function.prototype")) registerTraceTarget(value, hint);
     const cached = traceProxyCache.get(value);
     if (cached) return cached;
     const handler = {
@@ -157,9 +160,7 @@
             && !ObjectIntrinsic.prototype.hasOwnProperty.call(descriptor, "value")
             && descriptor.get === undefined;
           if (invariantValue || invariantUndefined) return result;
-          const nestedHint = typeof result === "function" && traceableKey(key)
-            ? `${owner}.${key}`
-            : null;
+          const nestedHint = traceableKey(key) ? `${owner}.${key}` : null;
           return observeTraceValue(result, nestedHint);
         } catch (error) {
           if (traceableKey(key))
@@ -1625,29 +1626,33 @@
   };
 
   const navigationStart = MathIntrinsic.floor(config.time_origin_ms);
+  const timingOffsets = profile.navigation_timing || {};
+  const timingValue = key => timingOffsets[key] == null
+    ? 0
+    : navigationStart + numberValue(timingOffsets[key]);
   const performanceTiming = ObjectIntrinsic.create(PerformanceTiming.prototype);
   performanceTimingState.set(performanceTiming, {
     navigationStart,
-    unloadEventStart: 0,
-    unloadEventEnd: 0,
-    redirectStart: 0,
-    redirectEnd: 0,
-    fetchStart: navigationStart,
-    domainLookupStart: 0,
-    domainLookupEnd: 0,
-    connectStart: 0,
-    connectEnd: 0,
-    secureConnectionStart: 0,
-    requestStart: 0,
-    responseStart: 0,
-    responseEnd: navigationStart + 30,
-    domLoading: navigationStart + 27,
-    domInteractive: navigationStart + 30,
-    domContentLoadedEventStart: navigationStart + 30,
-    domContentLoadedEventEnd: navigationStart + 30,
-    domComplete: navigationStart + 31,
-    loadEventStart: navigationStart + 31,
-    loadEventEnd: navigationStart + 31
+    unloadEventStart: timingValue("unload_event_start"),
+    unloadEventEnd: timingValue("unload_event_end"),
+    redirectStart: timingValue("redirect_start"),
+    redirectEnd: timingValue("redirect_end"),
+    fetchStart: timingValue("fetch_start"),
+    domainLookupStart: timingValue("domain_lookup_start"),
+    domainLookupEnd: timingValue("domain_lookup_end"),
+    connectStart: timingValue("connect_start"),
+    connectEnd: timingValue("connect_end"),
+    secureConnectionStart: timingValue("secure_connection_start"),
+    requestStart: timingValue("request_start"),
+    responseStart: timingValue("response_start"),
+    responseEnd: timingValue("response_end"),
+    domLoading: timingValue("dom_loading"),
+    domInteractive: timingValue("dom_interactive"),
+    domContentLoadedEventStart: timingValue("dom_content_loaded_event_start"),
+    domContentLoadedEventEnd: timingValue("dom_content_loaded_event_end"),
+    domComplete: timingValue("dom_complete"),
+    loadEventStart: timingValue("load_event_start"),
+    loadEventEnd: timingValue("load_event_end")
   });
   const performanceNavigation = ObjectIntrinsic.create(PerformanceNavigation.prototype);
   performanceNavigationState.set(performanceNavigation, { type: 0, redirectCount: 0 });
