@@ -7,6 +7,33 @@ import yatouv8
 
 
 class RuntimeTests(unittest.TestCase):
+    GET_TRACE_SOURCE = """
+        (() => {
+            const canvas = document.createElement("canvas");
+            const event = new Event("probe");
+            const locationDescriptor = Object.getOwnPropertyDescriptor(
+                globalThis,
+                "location",
+            );
+            return {
+                userAgent: navigator.userAgent,
+                screenWidth: screen.width,
+                cookie: document.cookie,
+                locationHref: location.href,
+                performanceOrigin: performance.timeOrigin,
+                canvasContext: canvas.getContext("2d"),
+                canvasWidth: canvas.clientWidth,
+                stableNavigator: navigator === navigator,
+                stableDocument: document === document,
+                windowIdentity: window === self,
+                eventIsEvent: event instanceof Event,
+                locationIsDataDescriptor: "value" in locationDescriptor,
+                dynamicNavigator: globalThis["navigator"] === navigator,
+                missingGlobal: globalThis.DefinitelyMissingChromeSurface,
+            };
+        })()
+    """
+
     def test_persistent_dom_timer_resource_and_trace(self) -> None:
         with yatouv8.Runtime() as runtime:
             self.assertEqual(runtime.eval("globalThis.answer = 41; answer + 1"), 42)
@@ -122,6 +149,155 @@ class RuntimeTests(unittest.TestCase):
                 }
             ]
             self.assertEqual(calls, ["createPolicy", "createScript", "isScript", "isScript"])
+
+    def test_get_trace_is_opt_in_and_semantics_preserving(self) -> None:
+        with yatouv8.Runtime() as runtime:
+            oracle = runtime.eval(self.GET_TRACE_SOURCE)
+            self.assertFalse(runtime.environment["getTrace"]["enabled"])
+            self.assertEqual(
+                [
+                    event
+                    for event in runtime.trace["events"]
+                    if event["level"] == "l1"
+                    and event["entry"]["operation"] == "get"
+                ],
+                [],
+            )
+
+        config = yatouv8.RuntimeConfig(
+            get_trace=yatouv8.GetTraceConfig(enabled=True, max_events=100)
+        )
+        with yatouv8.Runtime(config) as runtime:
+            observed = runtime.eval(self.GET_TRACE_SOURCE)
+            self.assertEqual(observed, oracle)
+            self.assertTrue(runtime.environment["getTrace"]["enabled"])
+            gets = [
+                (event["entry"]["target"], event["entry"]["member"])
+                for event in runtime.trace["events"]
+                if event["level"] == "l1"
+                and event["entry"]["operation"] == "get"
+            ]
+            self.assertTrue(
+                {
+                    ("globalThis", "navigator"),
+                    ("Navigator.prototype", "userAgent"),
+                    ("globalThis", "screen"),
+                    ("Screen.prototype", "width"),
+                    ("globalThis", "document"),
+                    ("Document.prototype", "cookie"),
+                    ("Location.prototype", "href"),
+                    ("Performance.prototype", "timeOrigin"),
+                    ("Element.prototype", "getContext"),
+                    ("Element.prototype", "clientWidth"),
+                    ("globalThis", "DefinitelyMissingChromeSurface"),
+                }.issubset(set(gets))
+            )
+
+    def test_get_trace_preserves_native_and_host_causal_order(self) -> None:
+        config = yatouv8.RuntimeConfig(
+            get_trace=yatouv8.GetTraceConfig(enabled=True, max_events=100)
+        )
+        with yatouv8.Runtime(config) as runtime:
+            runtime.eval("navigator.userAgent; performance.now(); screen.width; 'ok'")
+            observations = [
+                (
+                    event["entry"]["operation"],
+                    event["entry"]["target"],
+                    event["entry"]["member"],
+                )
+                for event in runtime.trace["events"]
+                if event["level"] == "l1"
+            ]
+            self.assertEqual(
+                observations,
+                [
+                    ("get", "globalThis", "navigator"),
+                    ("get", "Navigator.prototype", "userAgent"),
+                    ("get", "globalThis", "performance"),
+                    ("get", "Performance.prototype", "now"),
+                    ("call", "Performance.prototype", "now"),
+                    ("get", "globalThis", "screen"),
+                    ("get", "Screen.prototype", "width"),
+                ],
+            )
+
+    def test_get_trace_wraps_native_trusted_types_surfaces(self) -> None:
+        config = yatouv8.RuntimeConfig(
+            get_trace=yatouv8.GetTraceConfig(enabled=True, max_events=100)
+        )
+        with yatouv8.Runtime(config) as runtime:
+            self.assertEqual(
+                runtime.eval(
+                    "const policy=trustedTypes.createPolicy('trace-tt',{"
+                    "createScript:value=>`S:${value}`});"
+                    "policy.createScript('x');'ok'"
+                ),
+                "ok",
+            )
+            observations = [
+                (
+                    event["entry"]["operation"],
+                    event["entry"]["target"],
+                    event["entry"]["member"],
+                )
+                for event in runtime.trace["events"]
+                if event["level"] == "l1"
+            ]
+            self.assertEqual(
+                observations,
+                [
+                    ("get", "globalThis", "trustedTypes"),
+                    ("get", "TrustedTypePolicyFactory.prototype", "createPolicy"),
+                    ("call", "TrustedTypePolicyFactory.prototype", "createPolicy"),
+                    ("get", "TrustedTypePolicy.prototype", "createScript"),
+                    ("call", "TrustedTypePolicy.prototype", "createScript"),
+                ],
+            )
+
+    def test_get_trace_covers_microtasks_and_drained_timers(self) -> None:
+        config = yatouv8.RuntimeConfig(
+            get_trace=yatouv8.GetTraceConfig(enabled=True, max_events=100)
+        )
+        with yatouv8.Runtime(config) as runtime:
+            runtime.eval(
+                "globalThis.callbackReads=[];"
+                "Promise.resolve().then(()=>callbackReads.push(navigator.language));"
+                "setTimeout(()=>callbackReads.push(screen.height),0);"
+                "'queued'"
+            )
+            runtime.drain()
+            self.assertEqual(runtime.eval("callbackReads.slice()"), ["zh-CN", 1080])
+            gets = {
+                (event["entry"]["target"], event["entry"]["member"])
+                for event in runtime.trace["events"]
+                if event["level"] == "l1"
+                and event["entry"]["operation"] == "get"
+            }
+            self.assertTrue(
+                {
+                    ("Navigator.prototype", "language"),
+                    ("Screen.prototype", "height"),
+                }.issubset(gets)
+            )
+
+    def test_get_trace_budget_is_hard_bounded(self) -> None:
+        config = yatouv8.RuntimeConfig(
+            get_trace=yatouv8.GetTraceConfig(enabled=True, max_events=3)
+        )
+        with yatouv8.Runtime(config) as runtime:
+            runtime.eval(
+                "navigator.userAgent; screen.width; document.cookie; location.href"
+            )
+            stats = runtime.get_trace_stats
+            gets = [
+                event
+                for event in runtime.trace["events"]
+                if event["level"] == "l1"
+                and event["entry"]["operation"] == "get"
+            ]
+            self.assertEqual(len(gets), 3)
+            self.assertEqual(stats["events"], 3)
+            self.assertGreater(stats["dropped"], 0)
 
     def test_concurrent_callers_are_serialized_on_owner_thread(self) -> None:
         with yatouv8.Runtime() as runtime:

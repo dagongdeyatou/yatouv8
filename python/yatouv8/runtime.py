@@ -49,6 +49,14 @@ class BrowserProfile:
 
 
 @dataclass(slots=True)
+class GetTraceConfig:
+    """Opt-in bounded L1 diagnostics for browser-host property reads."""
+
+    enabled: bool = False
+    max_events: int = 50_000
+
+
+@dataclass(slots=True)
 class RuntimeConfig:
     """Configuration serialized directly into the native runtime contract."""
 
@@ -60,6 +68,7 @@ class RuntimeConfig:
     time_origin_ms: float = 1786103386944.1
     random_seed: int = 0x5EED150
     trace_id: str = "yatou-python-runtime"
+    get_trace: GetTraceConfig = field(default_factory=GetTraceConfig)
 
     def to_json(self) -> str:
         """Return canonical compact JSON for the Rust data contract."""
@@ -127,6 +136,15 @@ class Runtime:
         """Return immutable profile and execution-mode metadata."""
 
         return json.loads(self._native.environment_json())
+
+    @property
+    def get_trace_stats(self) -> dict[str, Any]:
+        """Return the bounded GET diagnostic counters for this runtime."""
+
+        stats = self.eval("__yatouGetTraceStats()")
+        if not isinstance(stats, dict):
+            raise RuntimeError("invalid GET trace statistics returned by the runtime")
+        return stats
 
     def close(self) -> None:
         """Stop the owner thread. Safe to call more than once."""

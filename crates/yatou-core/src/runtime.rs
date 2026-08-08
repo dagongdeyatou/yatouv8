@@ -134,6 +134,7 @@ pub struct BotguardRun {
 
 #[derive(Clone, Debug)]
 struct NativeObservation {
+    order: u32,
     target: &'static str,
     member: &'static str,
     arguments: Vec<ValueSummary>,
@@ -144,6 +145,7 @@ struct NativeObservation {
 struct CallbackState {
     clock_next_ms: f64,
     clock_step_ms: f64,
+    observation_sequence: u32,
     observations: Vec<NativeObservation>,
 }
 
@@ -152,6 +154,7 @@ impl Default for CallbackState {
         Self {
             clock_next_ms: 0.0,
             clock_step_ms: 0.1,
+            observation_sequence: 0,
             observations: Vec::new(),
         }
     }
@@ -267,6 +270,7 @@ fn configure_callbacks(clock: ClockMode) {
         *state.borrow_mut() = CallbackState {
             clock_next_ms: start_ms,
             clock_step_ms: step_ms,
+            observation_sequence: 0,
             observations: Vec::new(),
         };
     });
@@ -291,13 +295,31 @@ fn record_native(
     outcome: ValueSummary,
 ) {
     CALLBACK_STATE.with(|state| {
-        state.borrow_mut().observations.push(NativeObservation {
+        let mut state = state.borrow_mut();
+        state.observation_sequence = state.observation_sequence.saturating_add(1);
+        let order = state.observation_sequence;
+        state.observations.push(NativeObservation {
+            order,
             target,
             member,
             arguments,
             outcome,
         });
     });
+}
+
+#[allow(clippy::needless_pass_by_value)]
+fn observation_sequence_callback(
+    scope: &mut v8::PinScope,
+    _args: v8::FunctionCallbackArguments,
+    mut retval: v8::ReturnValue,
+) {
+    let order = CALLBACK_STATE.with(|state| {
+        let mut state = state.borrow_mut();
+        state.observation_sequence = state.observation_sequence.saturating_add(1);
+        state.observation_sequence
+    });
+    retval.set(v8::Number::new(scope, f64::from(order)).into());
 }
 
 #[allow(clippy::needless_pass_by_value)]
@@ -397,11 +419,88 @@ fn performance_now_callback(
     retval.set_double(value);
 }
 
+#[allow(clippy::needless_pass_by_value)]
+fn global_get_trace_callback(
+    scope: &mut v8::PinScope,
+    key: v8::Local<v8::Name>,
+    args: v8::PropertyCallbackArguments,
+    mut retval: v8::ReturnValue<v8::Value>,
+) -> v8::Intercepted {
+    let Ok(key) = v8::Local::<v8::String>::try_from(key) else {
+        return v8::Intercepted::kNo;
+    };
+    let member = key.to_rust_string_lossy(scope);
+    let holder = args.holder();
+    let value = holder.get_real_named_property(scope, key.into());
+
+    if !member.starts_with("__yatou") {
+        let logger_name = v8::String::new(scope, "__yatouRecordGlobalGet");
+        let logger = logger_name
+            .and_then(|logger_name| holder.get_real_named_property(scope, logger_name.into()))
+            .and_then(|logger| v8::Local::<v8::Function>::try_from(logger).ok());
+        let mut observed_value = value;
+        if let Some(logger) = logger {
+            let outcome = value.unwrap_or_else(|| v8::undefined(scope).into());
+            let member_value: v8::Local<v8::Value> = key.into();
+            let threw: v8::Local<v8::Value> = v8::Boolean::new(scope, false).into();
+            if let Some(observed) =
+                logger.call(scope, holder.into(), &[member_value, outcome, threw])
+                && value.is_some()
+            {
+                observed_value = Some(observed);
+            }
+        }
+
+        if let Some(value) = observed_value {
+            retval.set(value);
+            return v8::Intercepted::kYes;
+        }
+    }
+
+    if let Some(value) = value {
+        retval.set(value);
+        v8::Intercepted::kYes
+    } else {
+        v8::Intercepted::kNo
+    }
+}
+
+fn runtime_context<'s>(
+    scope: &mut v8::PinScope<'s, '_, ()>,
+    get_trace: GetTraceConfig,
+) -> v8::Local<'s, v8::Context> {
+    if !get_trace.enabled {
+        return v8::Context::new(scope, v8::ContextOptions::default());
+    }
+    let global_template = v8::ObjectTemplate::new(scope);
+    global_template.set_named_property_handler(
+        v8::NamedPropertyHandlerConfiguration::new()
+            .getter(global_get_trace_callback)
+            .flags(v8::PropertyHandlerFlags::ONLY_INTERCEPT_STRINGS),
+    );
+    v8::Context::new(
+        scope,
+        v8::ContextOptions {
+            global_template: Some(global_template),
+            ..v8::ContextOptions::default()
+        },
+    )
+}
+
 fn install_native_functions(
     scope: &mut v8::PinScope,
     context: v8::Local<v8::Context>,
 ) -> Result<(), V8Error> {
     let global = context.global(scope);
+    let observation_sequence = v8::Function::new(scope, observation_sequence_callback).ok_or(
+        V8Error::NativeInstallation("__yatouNextObservationSequence"),
+    )?;
+    set_hidden_function(
+        scope,
+        global,
+        "__yatouNextObservationSequence",
+        observation_sequence,
+    )?;
     let atob =
         v8::Function::new(scope, atob_callback).ok_or(V8Error::NativeInstallation("atob"))?;
     set_function(scope, global, "atob", atob)?;
@@ -425,6 +524,29 @@ fn install_native_functions(
     }
     trusted_types::install(scope, context)?;
     Ok(())
+}
+
+fn set_hidden_function(
+    scope: &mut v8::PinScope,
+    object: v8::Local<v8::Object>,
+    name: &'static str,
+    function: v8::Local<v8::Function>,
+) -> Result<(), V8Error> {
+    let key = v8::String::new(scope, name).ok_or(V8Error::SourceAllocation)?;
+    function.set_name(key);
+    if object
+        .define_own_property(
+            scope,
+            key.into(),
+            function.into(),
+            v8::PropertyAttribute::DONT_ENUM,
+        )
+        .unwrap_or(false)
+    {
+        Ok(())
+    } else {
+        Err(V8Error::NativeInstallation(name))
+    }
 }
 
 fn set_function(
@@ -670,6 +792,31 @@ pub struct RuntimeConfig {
     pub random_seed: u32,
     /// Trace identifier. It must contain only identifier-safe characters.
     pub trace_id: String,
+    /// Optional diagnostic property-read ledger. Disabled for oracle runs.
+    #[serde(default)]
+    pub get_trace: GetTraceConfig,
+}
+
+/// Bounded L1 property-read diagnostics.
+///
+/// GET tracing is opt-in because observing arbitrary JavaScript property reads
+/// requires transparent proxies around browser-host values. Production/oracle
+/// runs keep the original object graph untouched.
+#[derive(Clone, Copy, Debug, Deserialize, PartialEq, Serialize)]
+pub struct GetTraceConfig {
+    /// Whether browser-host property reads are appended as L1 `get` events.
+    pub enabled: bool,
+    /// Maximum number of GET events retained per runtime.
+    pub max_events: u32,
+}
+
+impl Default for GetTraceConfig {
+    fn default() -> Self {
+        Self {
+            enabled: false,
+            max_events: 50_000,
+        }
+    }
 }
 
 impl Default for RuntimeConfig {
@@ -687,6 +834,7 @@ impl Default for RuntimeConfig {
                 "yatou-runtime-{}",
                 RUNTIME_SEQUENCE.fetch_add(1, Ordering::Relaxed)
             ),
+            get_trace: GetTraceConfig::default(),
         }
     }
 }
@@ -723,6 +871,13 @@ impl RuntimeConfig {
             return Err(RuntimeError::Configuration(
                 "fixed-step clock values must be finite and step_ms must be non-negative"
                     .to_owned(),
+            ));
+        }
+        if self.get_trace.enabled
+            && (self.get_trace.max_events == 0 || self.get_trace.max_events > 1_000_000)
+        {
+            return Err(RuntimeError::Configuration(
+                "get_trace.max_events must be between 1 and 1000000 when enabled".to_owned(),
             ));
         }
         Ok(())
@@ -979,6 +1134,7 @@ fn recv_worker<T>(response: &mpsc::Receiver<Result<T, String>>) -> Result<T, Run
 #[serde(tag = "kind", rename_all = "snake_case")]
 enum HostObservation {
     Api {
+        order: u32,
         target: String,
         member: String,
         operation: String,
@@ -987,11 +1143,13 @@ enum HostObservation {
         threw: bool,
     },
     ResourceRequest {
+        order: u32,
         request_id: String,
         method: String,
         url: String,
     },
     ResourceResponse {
+        order: u32,
         request_id: String,
         status: u16,
         headers: BTreeMap<String, String>,
@@ -999,11 +1157,13 @@ enum HostObservation {
         body_sha256: String,
     },
     TimerSchedule {
+        order: u32,
         timer_id: u64,
         delay_ms: f64,
         repeating: bool,
     },
     TimerFire {
+        order: u32,
         timer_id: u64,
     },
 }
@@ -1012,6 +1172,32 @@ enum HostObservation {
 struct HostValueSummary {
     kind: String,
     preview: String,
+}
+
+enum SessionObservation {
+    Native(NativeObservation),
+    Host(HostObservation),
+}
+
+impl SessionObservation {
+    const fn order(&self) -> u32 {
+        match self {
+            Self::Native(observation) => observation.order,
+            Self::Host(observation) => observation.order(),
+        }
+    }
+}
+
+impl HostObservation {
+    const fn order(&self) -> u32 {
+        match self {
+            Self::Api { order, .. }
+            | Self::ResourceRequest { order, .. }
+            | Self::ResourceResponse { order, .. }
+            | Self::TimerSchedule { order, .. }
+            | Self::TimerFire { order, .. } => *order,
+        }
+    }
 }
 
 struct SessionTrace {
@@ -1091,132 +1277,156 @@ impl SessionTrace {
         Ok(())
     }
 
-    fn native(
+    fn observations(
         &mut self,
         parent: Option<u64>,
-        observations: Vec<NativeObservation>,
+        native: Vec<NativeObservation>,
+        host: Vec<HostObservation>,
     ) -> Result<(), TraceRuntimeError> {
+        let mut observations = native
+            .into_iter()
+            .map(SessionObservation::Native)
+            .chain(host.into_iter().map(SessionObservation::Host))
+            .collect::<Vec<_>>();
+        observations.sort_by_key(SessionObservation::order);
         for observation in observations {
-            let time = self.time();
-            self.recorder.record_l1(
-                time,
-                parent,
-                ApiLedgerEvent {
-                    operation: ApiOperation::Call,
-                    target: observation.target.to_owned(),
-                    member: Some(observation.member.to_owned()),
-                    arguments: observation.arguments,
-                    outcome: ApiOutcome::Return {
-                        value: observation.outcome,
-                    },
-                    call_site: None,
-                },
-            )?;
+            match observation {
+                SessionObservation::Native(observation) => {
+                    self.record_native(parent, observation)?;
+                }
+                SessionObservation::Host(observation) => self.record_host(parent, observation)?,
+            }
         }
         Ok(())
     }
 
-    fn host(
+    fn record_native(
         &mut self,
         parent: Option<u64>,
-        observations: Vec<HostObservation>,
+        observation: NativeObservation,
     ) -> Result<(), TraceRuntimeError> {
-        for observation in observations {
-            let time = self.time();
-            match observation {
-                HostObservation::Api {
-                    target,
-                    member,
-                    operation,
-                    arguments,
-                    outcome,
-                    threw,
-                } => {
-                    let operation = match operation.as_str() {
-                        "get" => ApiOperation::Get,
-                        "set" => ApiOperation::Set,
-                        "construct" => ApiOperation::Construct,
-                        _ => ApiOperation::Call,
-                    };
-                    let outcome = if threw {
-                        ApiOutcome::Throw {
-                            exception: ExceptionSummary {
-                                name: "Error".to_owned(),
-                                message: outcome.preview,
-                                stack_sha256: None,
-                            },
-                        }
-                    } else {
-                        ApiOutcome::Return {
-                            value: host_value(outcome),
-                        }
-                    };
-                    self.recorder.record_l1(
-                        time,
-                        parent,
-                        ApiLedgerEvent {
-                            operation,
-                            target,
-                            member: Some(member),
-                            arguments: arguments.into_iter().map(host_value).collect(),
-                            outcome,
-                            call_site: None,
+        let time = self.time();
+        self.recorder.record_l1(
+            time,
+            parent,
+            ApiLedgerEvent {
+                operation: ApiOperation::Call,
+                target: observation.target.to_owned(),
+                member: Some(observation.member.to_owned()),
+                arguments: observation.arguments,
+                outcome: ApiOutcome::Return {
+                    value: observation.outcome,
+                },
+                call_site: None,
+            },
+        )?;
+        Ok(())
+    }
+
+    #[allow(clippy::too_many_lines)]
+    fn record_host(
+        &mut self,
+        parent: Option<u64>,
+        observation: HostObservation,
+    ) -> Result<(), TraceRuntimeError> {
+        let time = self.time();
+        match observation {
+            HostObservation::Api {
+                order: _,
+                target,
+                member,
+                operation,
+                arguments,
+                outcome,
+                threw,
+            } => {
+                let operation = match operation.as_str() {
+                    "get" => ApiOperation::Get,
+                    "set" => ApiOperation::Set,
+                    "construct" => ApiOperation::Construct,
+                    _ => ApiOperation::Call,
+                };
+                let outcome = if threw {
+                    ApiOutcome::Throw {
+                        exception: ExceptionSummary {
+                            name: "Error".to_owned(),
+                            message: outcome.preview,
+                            stack_sha256: None,
                         },
-                    )?;
-                }
-                HostObservation::ResourceRequest {
-                    request_id,
-                    method,
-                    url,
-                } => {
-                    self.recorder.record_l0(
-                        time,
-                        parent,
-                        ReplayEvent::ResourceRequest {
-                            request_id,
-                            method,
-                            url,
-                        },
-                    )?;
-                }
-                HostObservation::ResourceResponse {
-                    request_id,
-                    status,
-                    headers,
-                    body,
-                    body_sha256,
-                } => {
-                    self.recorder.record_l0(
-                        time,
-                        parent,
-                        ReplayEvent::ResourceResponse {
-                            request_id,
-                            status,
-                            headers,
-                            body_base64: base64::engine::general_purpose::STANDARD.encode(body),
-                            body_sha256,
-                        },
-                    )?;
-                }
-                HostObservation::TimerSchedule {
-                    timer_id,
-                    delay_ms,
-                    repeating,
-                } => {
-                    self.recorder.record_l0(
-                        time,
-                        parent,
-                        ReplayEvent::TimerSchedule {
-                            timer_id,
-                            delay_ms,
-                            repeating,
-                        },
-                    )?;
-                }
-                HostObservation::TimerFire { timer_id } => {
-                    self.recorder
-                        .record_l0(time, parent, ReplayEvent::TimerFire { timer_id })?;
-                }
+                    }
+                } else {
+                    ApiOutcome::Return {
+                        value: host_value(outcome),
+                    }
+                };
+                self.recorder.record_l1(
+                    time,
+                    parent,
+                    ApiLedgerEvent {
+                        operation,
+                        target,
+                        member: Some(member),
+                        arguments: arguments.into_iter().map(host_value).collect(),
+                        outcome,
+                        call_site: None,
+                    },
+                )?;
+            }
+            HostObservation::ResourceRequest {
+                order: _,
+                request_id,
+                method,
+                url,
+            } => {
+                self.recorder.record_l0(
+                    time,
+                    parent,
+                    ReplayEvent::ResourceRequest {
+                        request_id,
+                        method,
+                        url,
+                    },
+                )?;
+            }
+            HostObservation::ResourceResponse {
+                order: _,
+                request_id,
+                status,
+                headers,
+                body,
+                body_sha256,
+            } => {
+                self.recorder.record_l0(
+                    time,
+                    parent,
+                    ReplayEvent::ResourceResponse {
+                        request_id,
+                        status,
+                        headers,
+                        body_base64: base64::engine::general_purpose::STANDARD.encode(body),
+                        body_sha256,
+                    },
+                )?;
+            }
+            HostObservation::TimerSchedule {
+                order: _,
+                timer_id,
+                delay_ms,
+                repeating,
+            } => {
+                self.recorder.record_l0(
+                    time,
+                    parent,
+                    ReplayEvent::TimerSchedule {
+                        timer_id,
+                        delay_ms,
+                        repeating,
+                    },
+                )?;
+            }
+            HostObservation::TimerFire { order: _, timer_id } => {
+                self.recorder
+                    .record_l0(time, parent, ReplayEvent::TimerFire { timer_id })?;
             }
         }
         Ok(())
@@ -1254,9 +1464,10 @@ fn runtime_worker(
     initialize_v8();
     configure_callbacks(config.profile.clock);
     let mut isolate = v8::Isolate::new(v8::CreateParams::default());
+    isolate.set_microtasks_policy(v8::MicrotasksPolicy::Explicit);
     let setup = (|| -> Result<v8::Global<v8::Context>, V8Error> {
         v8::scope!(let handle_scope, &mut isolate);
-        let context = v8::Context::new(handle_scope, v8::ContextOptions::default());
+        let context = runtime_context(handle_scope, config.get_trace);
         let scope = &mut v8::ContextScope::new(handle_scope, context);
         install_native_functions(scope, context)?;
         let bootstrap_config = serde_json::json!({
@@ -1269,6 +1480,7 @@ fn runtime_worker(
             },
             "time_origin_ms": config.time_origin_ms,
             "random_seed": config.random_seed,
+            "get_trace": config.get_trace,
             "baseline": "win11-chrome150.0.7871.188-headful-m2-v2",
         });
         let bootstrap_config = serde_json::to_string(&bootstrap_config)
@@ -1308,13 +1520,14 @@ fn runtime_worker(
                     let scope = &mut v8::ContextScope::new(handle_scope, local_context);
                     let result =
                         evaluate_session_source(scope, &source).map_err(|e| e.to_string())?;
+                    set_get_trace_active(scope, true).map_err(|e| e.to_string())?;
                     scope.perform_microtask_checkpoint();
+                    set_get_trace_active(scope, false).map_err(|e| e.to_string())?;
                     let host = take_host_observations(scope)?;
                     let native = take_observations();
                     trace
-                        .native(Some(parent), native)
+                        .observations(Some(parent), native, host)
                         .map_err(|e| e.to_string())?;
-                    trace.host(Some(parent), host).map_err(|e| e.to_string())?;
                     trace
                         .finish_eval(eval_id, parent, &result)
                         .map_err(|e| e.to_string())?;
@@ -1340,14 +1553,25 @@ fn runtime_worker(
                     v8::scope!(let handle_scope, &mut isolate);
                     let local_context = v8::Local::new(handle_scope, &context);
                     let scope = &mut v8::ContextScope::new(handle_scope, local_context);
-                    let result =
-                        execute_to_string(scope, &format!("JSON.stringify(__yatouDrain({limit}))"))
-                            .map_err(|error| error.to_string())?;
+                    let result = execute_to_string(
+                        scope,
+                        &format!(
+                            "JSON.stringify((() => {{ \
+                                __yatouSetGetTraceActive(true); \
+                                try {{ return __yatouDrain({limit}); }} \
+                                finally {{ __yatouSetGetTraceActive(false); }} \
+                            }})())"
+                        ),
+                    )
+                    .map_err(|error| error.to_string())?;
+                    set_get_trace_active(scope, true).map_err(|e| e.to_string())?;
                     scope.perform_microtask_checkpoint();
+                    set_get_trace_active(scope, false).map_err(|e| e.to_string())?;
                     let host = take_host_observations(scope)?;
                     let native = take_observations();
-                    trace.native(None, native).map_err(|e| e.to_string())?;
-                    trace.host(None, host).map_err(|e| e.to_string())?;
+                    trace
+                        .observations(None, native, host)
+                        .map_err(|e| e.to_string())?;
                     serde_json::from_str(&result).map_err(|error| error.to_string())
                 })();
                 let _ = reply.send(response);
@@ -1381,8 +1605,16 @@ fn evaluate_session_source(scope: &mut v8::PinScope, source: &str) -> Result<Eva
         serde_json::to_string(source).map_err(|error| V8Error::ResultDecode(error.to_string()))?;
     let wrapper = format!(
         r#"JSON.stringify((() => {{
+            const setGetTraceActive = globalThis.__yatouSetGetTraceActive;
+            const indirectEval = eval;
             try {{
-                const value = (0, eval)({source});
+                let value;
+                setGetTraceActive(true);
+                try {{
+                    value = (0, indirectEval)({source});
+                }} finally {{
+                    setGetTraceActive(false);
+                }}
                 let json = null;
                 try {{
                     const encoded = JSON.stringify(value);
@@ -1399,6 +1631,7 @@ fn evaluate_session_source(scope: &mut v8::PinScope, source: &str) -> Result<Eva
                     exception_message: null
                 }};
             }} catch (error) {{
+                setGetTraceActive(false);
                 return {{
                     ok: false,
                     kind: "undefined",
@@ -1412,6 +1645,12 @@ fn evaluate_session_source(scope: &mut v8::PinScope, source: &str) -> Result<Eva
     );
     let result = execute_to_string(scope, &wrapper)?;
     serde_json::from_str(&result).map_err(|error| V8Error::ResultDecode(error.to_string()))
+}
+
+fn set_get_trace_active(scope: &mut v8::PinScope, active: bool) -> Result<(), V8Error> {
+    let active = if active { "true" } else { "false" };
+    execute_to_string(scope, &format!("__yatouSetGetTraceActive({active}); 'ok'"))?;
+    Ok(())
 }
 
 fn take_host_observations(scope: &mut v8::PinScope) -> Result<Vec<HostObservation>, String> {

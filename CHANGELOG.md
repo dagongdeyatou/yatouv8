@@ -11,3 +11,5 @@
   recaptcha.net loader paths with content-addressed evidence.
 - Added repaired CPython 3.13 Windows wheels, CI, SBOM, release audit, performance,
   concurrency, exception-recovery, and cleanup gates.
+- Added opt-in bounded GET tracing for global/browser-host/native Trusted Types
+  properties with causal ordering across JS host and Rust native observations.

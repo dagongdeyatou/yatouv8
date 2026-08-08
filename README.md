@@ -56,6 +56,30 @@ with yatouv8.Runtime() as runtime:
 `Runtime`/`Context` 把 V8 Isolate 固定在 owner thread；Python 等待时释放 GIL。
 `fetch` 只读取显式 `add_resource` 内容，缺失 URL 不回退真实网络。
 
+需要定位 Google VM 的首个环境分叉时，显式开启有界 GET tracing：
+
+```python
+import yatouv8
+
+config = yatouv8.RuntimeConfig(
+    get_trace=yatouv8.GetTraceConfig(enabled=True, max_events=50_000),
+)
+with yatouv8.Runtime(config) as runtime:
+    runtime.eval("navigator.userAgent; performance.now(); screen.width")
+    gets = [
+        event["entry"]
+        for event in runtime.trace["events"]
+        if event["level"] == "l1" and event["entry"]["operation"] == "get"
+    ]
+    print(gets)
+    print(runtime.get_trace_stats)
+```
+
+该模式覆盖全局对象、缺失全局属性、DOM/Browser host 嵌套属性、Trusted Types
+原生对象，以及 microtask/timer 回调中的读取。GET 与 native CALL 使用共享序号，
+因此 trace 保留真实因果顺序。诊断默认关闭；`max_events` 是每个 Runtime 的硬上限。
+详细合同见 [GET tracing](docs/evidence/get-tracing.md)。
+
 ## 构建 V8 smoke test
 
 前置条件：
