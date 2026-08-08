@@ -114,6 +114,16 @@ class GetTraceConfig:
 
 
 @dataclass(slots=True)
+class ExecutionTraceConfig:
+    """Opt-in V8 Inspector source capture and precise block coverage."""
+
+    enabled: bool = False
+    capture_source: bool = True
+    max_scripts: int = 256
+    max_source_bytes: int = 1_048_576
+
+
+@dataclass(slots=True)
 class RuntimeConfig:
     """Configuration serialized directly into the native runtime contract."""
 
@@ -126,6 +136,7 @@ class RuntimeConfig:
     random_seed: int = 0x5EED150
     trace_id: str = "yatou-python-runtime"
     get_trace: GetTraceConfig = field(default_factory=GetTraceConfig)
+    execution_trace: ExecutionTraceConfig = field(default_factory=ExecutionTraceConfig)
 
     def to_json(self) -> str:
         """Return canonical compact JSON for the Rust data contract."""
@@ -202,6 +213,15 @@ class Runtime:
         if not isinstance(stats, dict):
             raise RuntimeError("invalid GET trace statistics returned by the runtime")
         return stats
+
+    @property
+    def execution_trace(self) -> dict[str, Any]:
+        """Return the latest dynamic-script source and precise coverage capture."""
+
+        capture = json.loads(self._native.execution_trace_json())
+        if not isinstance(capture, dict):
+            raise RuntimeError("invalid execution trace returned by the runtime")
+        return capture
 
     def import_cookies(self, cookies: Any) -> int:
         """Import a mapping, CookieJar, or curl_cffi-compatible cookie collection."""

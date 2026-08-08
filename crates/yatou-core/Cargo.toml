@@ -54,5 +54,9 @@ required-features = ["v8-runtime"]
 name = "sgss_acceptance"
 required-features = ["v8-runtime"]
 
+[[example]]
+name = "execution_trace"
+required-features = ["v8-runtime"]
+
 [lints]
 workspace = true

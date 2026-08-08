@@ -18,6 +18,7 @@ use yatou_schema::{
 
 use crate::{Resource, ResourceError, TraceRecorder, TraceRuntimeError};
 
+mod execution_trace;
 mod trusted_types;
 
 static INITIALIZE_V8: Once = Once::new();
@@ -1091,6 +1092,36 @@ pub struct RuntimeConfig {
     /// Optional diagnostic property-read ledger. Disabled for oracle runs.
     #[serde(default)]
     pub get_trace: GetTraceConfig,
+    /// Optional V8 Inspector script/source and precise block coverage capture.
+    #[serde(default)]
+    pub execution_trace: ExecutionTraceConfig,
+}
+
+/// Bounded, opt-in dynamic-script and precise block coverage diagnostics.
+///
+/// Unlike JavaScript-level wrappers, this uses V8 Inspector and therefore does
+/// not replace `eval`, alter call receivers, or rewrite target source text.
+#[derive(Clone, Copy, Debug, Deserialize, PartialEq, Serialize)]
+pub struct ExecutionTraceConfig {
+    /// Enable per-eval `Debugger.scriptParsed` and precise coverage capture.
+    pub enabled: bool,
+    /// Include exact script source in the returned diagnostic artifact.
+    pub capture_source: bool,
+    /// Maximum number of newly parsed scripts retained for one eval.
+    pub max_scripts: u32,
+    /// Maximum UTF-8 source bytes retained per script.
+    pub max_source_bytes: u32,
+}
+
+impl Default for ExecutionTraceConfig {
+    fn default() -> Self {
+        Self {
+            enabled: false,
+            capture_source: true,
+            max_scripts: 256,
+            max_source_bytes: 1_048_576,
+        }
+    }
 }
 
 /// Bounded L1 property-read diagnostics.
@@ -1131,6 +1162,7 @@ impl Default for RuntimeConfig {
                 RUNTIME_SEQUENCE.fetch_add(1, Ordering::Relaxed)
             ),
             get_trace: GetTraceConfig::default(),
+            execution_trace: ExecutionTraceConfig::default(),
         }
     }
 }
@@ -1199,6 +1231,17 @@ impl RuntimeConfig {
         {
             return Err(RuntimeError::Configuration(
                 "get_trace.max_events must be between 1 and 1000000 when enabled".to_owned(),
+            ));
+        }
+        if self.execution_trace.enabled
+            && (self.execution_trace.max_scripts == 0
+                || self.execution_trace.max_scripts > 10_000
+                || self.execution_trace.max_source_bytes == 0
+                || self.execution_trace.max_source_bytes > 16 * 1_048_576)
+        {
+            return Err(RuntimeError::Configuration(
+                "execution_trace requires max_scripts in 1..=10000 and max_source_bytes in 1..=16777216"
+                    .to_owned(),
             ));
         }
         Ok(())
@@ -1275,6 +1318,9 @@ enum RuntimeCommand {
         reply: WorkerReply<serde_json::Value>,
     },
     TraceStats {
+        reply: WorkerReply<serde_json::Value>,
+    },
+    ExecutionTrace {
         reply: WorkerReply<serde_json::Value>,
     },
     Close {
@@ -1475,6 +1521,20 @@ impl BrowserRuntime {
         let (reply, response) = mpsc::channel();
         self.commands
             .send(RuntimeCommand::TraceStats { reply })
+            .map_err(|_| RuntimeError::Closed)?;
+        recv_worker(&response)
+    }
+
+    /// Return the most recent V8 Inspector dynamic-script/coverage capture.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`RuntimeError`] when the owner thread is unavailable.
+    pub fn execution_trace(&self) -> Result<serde_json::Value, RuntimeError> {
+        self.ensure_open()?;
+        let (reply, response) = mpsc::channel();
+        self.commands
+            .send(RuntimeCommand::ExecutionTrace { reply })
             .map_err(|_| RuntimeError::Closed)?;
         recv_worker(&response)
     }
@@ -1926,6 +1986,23 @@ fn runtime_worker(
             return;
         }
     };
+    let mut execution_inspector = if config.execution_trace.enabled {
+        match execution_trace::ExecutionInspector::new(
+            &mut isolate,
+            &context,
+            config.execution_trace,
+        ) {
+            Ok(inspector) => Some(inspector),
+            Err(error) => {
+                let _ = ready.send(Err(format!(
+                    "failed to initialize execution trace inspector: {error}"
+                )));
+                return;
+            }
+        }
+    } else {
+        None
+    };
     let mut trace = match SessionTrace::new(&config) {
         Ok(trace) => trace,
         Err(error) => {
@@ -1941,24 +2018,53 @@ fn runtime_worker(
         match command {
             RuntimeCommand::Eval { source, reply } => {
                 let response = (|| -> Result<EvalResult, String> {
+                    let execution_sequence = execution_inspector
+                        .as_mut()
+                        .map(execution_trace::ExecutionInspector::begin_eval)
+                        .transpose()?;
                     let (eval_id, parent) = trace.start_eval(&source).map_err(|e| e.to_string())?;
-                    v8::scope!(let handle_scope, &mut isolate);
-                    let local_context = v8::Local::new(handle_scope, &context);
-                    let scope = &mut v8::ContextScope::new(handle_scope, local_context);
-                    let result = evaluate_session_source(scope, &bridge, &source)
-                        .map_err(|e| e.to_string())?;
-                    set_get_trace_active(scope, &bridge, true).map_err(|e| e.to_string())?;
-                    scope.perform_microtask_checkpoint();
-                    set_get_trace_active(scope, &bridge, false).map_err(|e| e.to_string())?;
-                    let host = take_host_observations(scope, &bridge)?;
-                    let native = take_observations();
-                    trace
-                        .observations(Some(parent), native, host)
-                        .map_err(|e| e.to_string())?;
-                    trace
-                        .finish_eval(eval_id, parent, &result)
-                        .map_err(|e| e.to_string())?;
-                    Ok(result)
+                    let evaluation = (|| -> Result<EvalResult, String> {
+                        v8::scope!(let handle_scope, &mut isolate);
+                        let local_context = v8::Local::new(handle_scope, &context);
+                        let scope = &mut v8::ContextScope::new(handle_scope, local_context);
+                        let result = evaluate_session_source(scope, &bridge, &source)
+                            .map_err(|e| e.to_string())?;
+                        set_get_trace_active(scope, &bridge, true).map_err(|e| e.to_string())?;
+                        scope.perform_microtask_checkpoint();
+                        set_get_trace_active(scope, &bridge, false).map_err(|e| e.to_string())?;
+                        let host = take_host_observations(scope, &bridge)?;
+                        let native = take_observations();
+                        trace
+                            .observations(Some(parent), native, host)
+                            .map_err(|e| e.to_string())?;
+                        trace
+                            .finish_eval(eval_id, parent, &result)
+                            .map_err(|e| e.to_string())?;
+                        Ok(result)
+                    })();
+                    let capture = execution_sequence.map_or(Ok(()), |sequence| {
+                        execution_inspector
+                            .as_mut()
+                            .expect("execution inspector exists for its sequence")
+                            .finish_eval(sequence)
+                    });
+                    match (evaluation, capture) {
+                        (Ok(result), Ok(())) => Ok(result),
+                        (Err(error), Ok(())) => Err(error),
+                        (Ok(_), Err(error)) => {
+                            Err(format!("execution trace finalization failed: {error}"))
+                        }
+                        (Err(evaluation), Err(capture)) => {
+                            if let (Some(inspector), Some(sequence)) =
+                                (execution_inspector.as_mut(), execution_sequence)
+                            {
+                                inspector.abort_eval(sequence, &capture);
+                            }
+                            Err(format!(
+                                "{evaluation}; execution trace finalization failed: {capture}"
+                            ))
+                        }
+                    }
                 })();
                 let _ = reply.send(response);
             }
@@ -2071,6 +2177,20 @@ fn runtime_worker(
                         .map_err(|error| error.to_string())?;
                     serde_json::from_str(&json).map_err(|error| error.to_string())
                 })();
+                let _ = reply.send(response);
+            }
+            RuntimeCommand::ExecutionTrace { reply } => {
+                let response = Ok(execution_inspector.as_ref().map_or_else(
+                    || {
+                        serde_json::json!({
+                            "schema_version": 1,
+                            "enabled": false,
+                            "status": "disabled",
+                            "scripts": [],
+                        })
+                    },
+                    execution_trace::ExecutionInspector::snapshot,
+                ));
                 let _ = reply.send(response);
             }
             RuntimeCommand::Close { reply } => {

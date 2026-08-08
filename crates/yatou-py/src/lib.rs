@@ -126,8 +126,8 @@ impl PyRuntime {
     }
 
     /// Import a JSON array of cookies and return the resulting jar size.
-    fn import_cookies_json(&self, py: Python<'_>, cookies_json: String) -> PyResult<u64> {
-        let cookies = serde_json::from_str(&cookies_json).map_err(runtime_error)?;
+    fn import_cookies_json(&self, py: Python<'_>, cookies_json: &str) -> PyResult<u64> {
+        let cookies = serde_json::from_str(cookies_json).map_err(runtime_error)?;
         py.detach(|| self.runtime.import_cookies(cookies))
             .map_err(runtime_error)
     }
@@ -154,6 +154,14 @@ impl PyRuntime {
             .detach(|| self.runtime.trace_stats())
             .map_err(runtime_error)?;
         serde_json::to_string(&stats).map_err(runtime_error)
+    }
+
+    /// Return the most recent V8 Inspector dynamic-script/coverage capture.
+    fn execution_trace_json(&self, py: Python<'_>) -> PyResult<String> {
+        let capture = py
+            .detach(|| self.runtime.execution_trace())
+            .map_err(runtime_error)?;
+        serde_json::to_string(&capture).map_err(runtime_error)
     }
 
     /// Close the owner thread. Idempotent.

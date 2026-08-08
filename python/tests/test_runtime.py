@@ -7,6 +7,45 @@ import yatouv8
 
 
 class RuntimeTests(unittest.TestCase):
+    def test_execution_trace_captures_nested_eval_source_and_missed_branch(self) -> None:
+        config = yatouv8.RuntimeConfig(
+            execution_trace=yatouv8.ExecutionTraceConfig(
+                enabled=True,
+                max_scripts=16,
+                max_source_bytes=100_000,
+            )
+        )
+        with yatouv8.Runtime(config) as runtime:
+            self.assertEqual(
+                runtime.eval(
+                    "eval(`globalThis.knitsailReady=true;"
+                    "if(globalThis.addEventListener){globalThis.knitsail={ready:true}}"
+                    "else{globalThis.knitsail={ready:false}}`);"
+                    "globalThis.knitsail.ready"
+                ),
+                True,
+            )
+            capture = runtime.execution_trace
+
+        self.assertEqual(capture["status"], "captured")
+        nested = next(
+            script
+            for script in capture["scripts"]
+            if script["role"] == "nested_dynamic_script"
+        )
+        self.assertIn("globalThis.knitsail", nested["source"])
+        self.assertGreaterEqual(len(nested["missed_range_snippets"]), 1)
+        report = yatouv8.analyze_execution_trace(capture, ("knitsail",))
+        self.assertGreaterEqual(report["summary"]["symbol_occurrences"], 1)
+        self.assertTrue(report["ranked_blockers"])
+
+    def test_execution_trace_is_disabled_by_default(self) -> None:
+        with yatouv8.Runtime() as runtime:
+            runtime.eval("1")
+            capture = runtime.execution_trace
+        self.assertFalse(capture["enabled"])
+        self.assertEqual(capture["status"], "disabled")
+
     GET_TRACE_SOURCE = """
         (() => {
             const canvas = document.createElement("canvas");

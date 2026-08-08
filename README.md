@@ -82,6 +82,36 @@ with yatouv8.Runtime(config) as runtime:
 因此 trace 保留真实因果顺序。诊断默认关闭；`max_events` 是每个 Runtime 的硬上限。
 详细合同见 [GET tracing](docs/evidence/get-tracing.md)。
 
+当 GET trace 已足够、需要进入动态 `eval` 内部定位未执行的初始化分支时，开启
+V8 Inspector precise coverage：
+
+```python
+import json
+import yatouv8
+
+config = yatouv8.RuntimeConfig(
+    execution_trace=yatouv8.ExecutionTraceConfig(
+        enabled=True,
+        capture_source=True,
+        max_scripts=256,
+        max_source_bytes=1_048_576,
+    ),
+)
+with yatouv8.Runtime(config) as runtime:
+    runtime.eval(challenge_source)
+    capture = runtime.execution_trace
+    blockers = yatouv8.analyze_execution_trace(capture, ("knitsail", "td", "sgs"))
+
+with open("execution-trace.json", "w", encoding="utf-8") as output:
+    json.dump({"capture": capture, "blockers": blockers}, output, ensure_ascii=False, indent=2)
+```
+
+该模式不替换 `eval`、不改写目标源码；它捕获 entry/nested dynamic script 的精确
+源码、SHA-256、函数与 block range 计数，并把位于 zero-count range 内的
+`knitsail`/`td`/`sgs` 出现位置排在 blocker 首位。Inspector 诊断默认关闭，不参与
+最终 Chrome oracle 验收。完整字段见
+[动态 eval execution trace](docs/evidence/execution-tracing.md)。
+
 不扩充 trace、直接比较最可能阻断 `td` 初始化的 API 语义：
 
 ```powershell
