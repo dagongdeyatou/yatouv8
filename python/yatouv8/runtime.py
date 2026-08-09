@@ -55,6 +55,8 @@ class BrowserProfile:
     screen_avail_width: int = 1920
     screen_avail_height: int = 1032
     screen_depth: int = 24
+    outer_width: int = 1280
+    outer_height: int = 720
     navigation_timing: dict[str, int | None] = field(default_factory=lambda: {
         "connect_start": 3,
         "secure_connection_start": None,
@@ -269,7 +271,7 @@ class RuntimeConfig:
     profile: BrowserProfile = field(default_factory=BrowserProfile)
     url: str = "https://fixture.invalid/"
     viewport_width: int = 1280
-    viewport_height: int = 720
+    viewport_height: int = 633
     device_scale_factor: float = 1.0
     time_origin_ms: float = 1786103386944.1
     random_seed: int = 0x5EED150
@@ -300,8 +302,8 @@ class RuntimeConfig:
             clock=timing.clock_profile(quantum_ms=clock_quantum_ms),
         )
         runtime_options.setdefault("url", str(response.url))
-        runtime_options.setdefault("viewport_width", coupled_profile.screen_width)
-        runtime_options.setdefault("viewport_height", coupled_profile.screen_height)
+        runtime_options.setdefault("viewport_width", 1280)
+        runtime_options.setdefault("viewport_height", 633)
         runtime_options.setdefault("time_origin_ms", navigation_start_ms)
         return cls(profile=coupled_profile, **runtime_options)
 

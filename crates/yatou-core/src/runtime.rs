@@ -220,6 +220,12 @@ pub struct BrowserProfile {
     pub screen_avail_height: u32,
     /// Color and pixel depth.
     pub screen_depth: u32,
+    /// Top-level browser window width in CSS pixels.
+    #[serde(default = "default_outer_width")]
+    pub outer_width: u32,
+    /// Top-level browser window height in CSS pixels.
+    #[serde(default = "default_outer_height")]
+    pub outer_height: u32,
     /// Evidence-derived relative values for the legacy `PerformanceTiming` object.
     #[serde(default)]
     pub navigation_timing: NavigationTimingProfile,
@@ -245,6 +251,8 @@ impl Default for BrowserProfile {
             screen_avail_width: 1_920,
             screen_avail_height: 1_032,
             screen_depth: 24,
+            outer_width: default_outer_width(),
+            outer_height: default_outer_height(),
             navigation_timing: NavigationTimingProfile::default(),
             navigation_entry: NavigationEntryProfile::default(),
             clock: ClockMode::Recorded {
@@ -254,6 +262,14 @@ impl Default for BrowserProfile {
             },
         }
     }
+}
+
+const fn default_outer_width() -> u32 {
+    1_280
+}
+
+const fn default_outer_height() -> u32 {
+    720
 }
 
 fn default_chrome_clock_buckets() -> Vec<ClockBucket> {
@@ -333,6 +349,7 @@ struct NativeObservation {
 
 #[derive(Debug)]
 struct CallbackState {
+    record_observations: bool,
     clock_next_ms: f64,
     clock_step_ms: f64,
     clock_recorded: Vec<f64>,
@@ -349,6 +366,7 @@ struct CallbackState {
 impl Default for CallbackState {
     fn default() -> Self {
         Self {
+            record_observations: false,
             clock_next_ms: 0.0,
             clock_step_ms: 0.1,
             clock_recorded: Vec::new(),
@@ -425,7 +443,7 @@ pub fn run_botguard(
     profile: &BrowserProfile,
 ) -> Result<BotguardRun, V8Error> {
     initialize_v8();
-    configure_callbacks(&profile.clock);
+    configure_callbacks(&profile.clock, true);
 
     let isolate = &mut v8::Isolate::new(v8::CreateParams::default());
     v8::scope!(let handle_scope, isolate);
@@ -468,7 +486,7 @@ pub fn run_botguard(
     finish_botguard_run(model_source, envelope, &observations)
 }
 
-fn configure_callbacks(clock: &ClockMode) {
+fn configure_callbacks(clock: &ClockMode, record_observations: bool) {
     let (
         clock_next_ms,
         clock_step_ms,
@@ -516,6 +534,7 @@ fn configure_callbacks(clock: &ClockMode) {
     };
     CALLBACK_STATE.with(|state| {
         *state.borrow_mut() = CallbackState {
+            record_observations,
             clock_next_ms,
             clock_step_ms,
             clock_recorded,
@@ -551,6 +570,9 @@ fn record_native(
 ) {
     CALLBACK_STATE.with(|state| {
         let mut state = state.borrow_mut();
+        if !state.record_observations && target == "Performance.prototype" && member == "now" {
+            return;
+        }
         state.observation_sequence = state.observation_sequence.saturating_add(1);
         let order = state.observation_sequence;
         state.observations.push(NativeObservation {
@@ -997,7 +1019,7 @@ fn browser_bootstrap(profile: &BrowserProfile) -> String {
                 readyState: "complete",
                 visibilityState: "visible",
                 hidden: false,
-                documentElement: {{ style: {{}}, clientWidth: 1280, clientHeight: 720 }},
+                documentElement: {{ style: {{}}, clientWidth: 1280, clientHeight: 633 }},
                 body: {{ style: {{}}, appendChild() {{}}, removeChild() {{}} }},
                 createElement(tag) {{
                     return {{
@@ -1016,7 +1038,7 @@ fn browser_bootstrap(profile: &BrowserProfile) -> String {
             getter(globalThis, "document", document);
             data(globalThis, "location", {{ href: "about:blank", protocol: "about:", host: "", hostname: "", pathname: "blank" }});
             data(globalThis, "innerWidth", 1280);
-            data(globalThis, "innerHeight", 720);
+            data(globalThis, "innerHeight", 633);
             data(globalThis, "devicePixelRatio", 1);
             data(globalThis, "removeEventListener", function removeEventListener() {{}});
             data(globalThis, "__yatouTrace", [], false);
@@ -1248,7 +1270,7 @@ impl Default for RuntimeConfig {
             profile: BrowserProfile::default(),
             url: "https://fixture.invalid/".to_owned(),
             viewport_width: 1_280,
-            viewport_height: 720,
+            viewport_height: 633,
             device_scale_factor: 1.0,
             time_origin_ms: 1_786_103_386_944.1,
             random_seed: 0x05ee_d150,
@@ -1282,6 +1304,11 @@ impl RuntimeConfig {
         if self.viewport_width == 0 || self.viewport_height == 0 {
             return Err(RuntimeError::Configuration(
                 "viewport dimensions must be positive".to_owned(),
+            ));
+        }
+        if self.profile.outer_width == 0 || self.profile.outer_height == 0 {
+            return Err(RuntimeError::Configuration(
+                "outer window dimensions must be positive".to_owned(),
             ));
         }
         if !self.device_scale_factor.is_finite() || self.device_scale_factor <= 0.0 {
@@ -2038,7 +2065,11 @@ fn runtime_worker(
     ready: mpsc::Sender<Result<(), String>>,
 ) {
     initialize_v8();
-    configure_callbacks(&config.profile.clock);
+    // Native observation allocation is a diagnostic feature. Keeping it on
+    // during an oracle run materially changes the very performance.now()
+    // distribution that BotGuard measures, so couple it to the explicit GET
+    // tracing switch instead of recording hundreds of hidden events.
+    configure_callbacks(&config.profile.clock, config.get_trace.enabled);
     let mut isolate = v8::Isolate::new(v8::CreateParams::default());
     isolate.set_microtasks_policy(v8::MicrotasksPolicy::Explicit);
     let setup = (|| -> Result<(v8::Global<v8::Context>, v8::Global<v8::Object>), V8Error> {

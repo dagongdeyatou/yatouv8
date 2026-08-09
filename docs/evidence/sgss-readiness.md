@@ -28,6 +28,40 @@
 `manifests/chrome150.runtime-surface.json` 的 baseline/member count，二者不一致即拒绝启动。
 运行时 host bridge 保存在 V8 private state，不再依赖 JS 可见的 `__yatou*` 属性。
 
+## 2026-08-09 最终兼容迭代
+
+本轮用 Chrome for Testing `150.0.7871.129` 对同一份四段 inline challenge 做了
+precise-coverage 与分类器输入对照，并完成以下修复：
+
+- TrustedScript 使用 V8 code-like 模板，原生 `eval(TrustedScript)` 不再依赖包装 `eval`；
+- `Event.isTrusted` 的 own accessor、legacy event state、`createEvent("MouseEvents")`、
+  `MouseEvent` 字段及 `addEventListener` options 读取顺序与 Chrome 对齐；
+- `document.createElement()` 绑定正确 WebIDL prototype，`img/div` 的 brand、constructor
+  和字符串默认值不再退化成通用 `HTMLElement`；
+- `window.name/status`、`inner=1280x633`、`outer=1280x720`、
+  `screen=1920x1080` 使用同一 Win11 headful profile；
+- 生成 accessor 的 GET trace 进入统一的 depth/budget 路径，既覆盖原始对象读取，也不再
+  与诊断 Proxy 重复计数或越过 `maxEvents`；
+- oracle 模式关闭隐藏的 native `performance.now()` observation 分配，避免诊断本身改变
+  被测时钟分布。
+
+最终本地实页门禁记录为
+`.yatou/evidence/google-vm-live/google-com-ya-fei-offline-final.json`：9 个谓词全部为
+`true`，四段脚本零异常，`knitsail=object`、`td.ns/rs` 有序、生成 950 字节 Cookie，
+并产生同入口的 `sei` 导航。`window.sgs=undefined` 是当前页面 `sp/ussv` 均为空时的
+预期 gate，不是未初始化信号。
+
+同源 decoded VM 的 62,175 字节主体与 Chrome 完全一致（SHA-256
+`6b4cfef5f0fdcc1a22727e3533d4f8d0f1bf850eeeb8337d9c031362b522b6e6`）。分类器前
+35 次语义输入全部一致；yatouv8 多出的 4 次后续数组探针集中在一个随机采样辅助函数，
+不改变 Cookie、timing、knitsail 或 navigation 终态。对照记录位于
+`.yatou/evidence/google-vm-live/main-coverage-diff-final.json`。
+
+项目发布流水线 `scripts/run-m10.ps1` 已返回 `terminal_complete`。最终 wheel 为
+`dist/yatouv8-0.1.0-cp313-cp313-win_amd64.whl`，SHA-256
+`7500de5968bb1abe0e3e9800414c8aff9dbe343a3456962f43e4026650dd4216`；M10 报告位于
+`.yatou/evidence/reports/m10/runs/20260809T071107.197469Z-2df7b55e/m10.report.json`。
+
 这里的 12,841/12,841 证明的是 presence、own-key 顺序、descriptor 和 callable
 metadata，不等价于 12,841 个成员都具有完整 Chromium 行为。当前在线 VM 是否激活仍以
 同一脚本的 first-divergence trace 为准；调用量下降只能说明更早分支退出，不能用门禁
@@ -72,3 +106,11 @@ session / Google 风险状态，不能再把它单独归因于 yatouv8 API 缺�
 实现 Mapping，旧代码走 `items()` 会抛出 `CookieConflict`；现在优先迭代底层 CookieJar，
 保留 domain/path 身份，并以实际重定向后的 `.google.com.hk/search` 作为 Runtime URL
 和 `location.replace` 同入口校验基准。
+
+最终一次 `127.0.0.1:7890` 在线记录位于
+`.yatou/evidence/google-vm-live/google-com-ya-fei-live-final.json`：首次响应 200、四段
+脚本零异常、SG_SS 生成且被服务端消费为 `0`，但第二跳仍被 fresh-session 风险控制转入
+HTTP 429 `/sorry/`。同一时刻 Chrome 151 headless 自己执行完整页面也得到相同 429，记录
+为 `.yatou/evidence/google-vm-live/google-com-ya-fei-headless-chrome-control-final.json`。
+因此 M10、本地 Google VM 和 handoff 验收已完成；公网 SearchResultsPage 仍作为外部
+风险状态门禁单独保留，不能伪报为通过。

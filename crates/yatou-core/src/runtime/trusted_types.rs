@@ -23,6 +23,23 @@ const PROTOTYPE_SCRIPT_URL: &str = "yatouv8.trusted_types.prototype.script_url";
 const EMPTY_HTML: &str = "yatouv8.trusted_types.empty.html";
 const EMPTY_SCRIPT: &str = "yatouv8.trusted_types.empty.script";
 const DEFAULT_POLICY: &str = "yatouv8.trusted_types.default_policy";
+const SCRIPT_ALLOCATOR: &str = "yatouv8.trusted_types.allocator.script";
+
+#[cfg(all(windows, target_env = "msvc"))]
+#[allow(unsafe_code)]
+mod code_like {
+    unsafe extern "C" {
+        #[link_name = "?SetCodeLike@ObjectTemplate@v8@@QEAAXXZ"]
+        fn object_template_set_code_like(template: *const v8::ObjectTemplate);
+    }
+
+    pub(super) fn set(template: &v8::ObjectTemplate) {
+        // SAFETY: rusty_v8::Local<ObjectTemplate> dereferences to the same
+        // v8::ObjectTemplate C++ object linked from rusty_v8.lib. On x64 MSVC,
+        // the C and C++ member-call ABIs both pass the sole pointer in RCX.
+        unsafe { object_template_set_code_like(template) };
+    }
+}
 
 #[derive(Clone, Copy)]
 enum TrustedKind {
@@ -190,6 +207,13 @@ fn illegal_constructor(
     );
 }
 
+fn trusted_script_allocator(
+    _scope: &mut v8::PinScope,
+    _args: v8::FunctionCallbackArguments,
+    _retval: v8::ReturnValue,
+) {
+}
+
 fn interface_constructor<'s>(
     scope: &mut v8::PinScope<'s, '_>,
     name: &'static str,
@@ -244,7 +268,15 @@ fn trusted_value<'s>(
     value: v8::Local<v8::String>,
 ) -> Option<v8::Local<'s, v8::Object>> {
     let prototype = object_hidden(scope, factory, kind.prototype())?;
-    let object = v8::Object::new(scope);
+    let object = match kind {
+        TrustedKind::Script => {
+            let allocator =
+                v8::Local::<v8::Function>::try_from(hidden_get(scope, factory, SCRIPT_ALLOCATOR)?)
+                    .ok()?;
+            allocator.new_instance(scope, &[])?
+        }
+        TrustedKind::Html | TrustedKind::ScriptUrl => v8::Object::new(scope),
+    };
     if !object
         .set_prototype(scope, prototype.into())
         .unwrap_or(false)
@@ -1052,6 +1084,15 @@ pub(super) fn install(
     )?;
 
     let factory = v8::Object::new(scope);
+    let allocator_template = v8::FunctionTemplate::new(scope, trusted_script_allocator);
+    let instance_template = allocator_template.instance_template(scope);
+    code_like::set(&instance_template);
+    let script_allocator =
+        allocator_template
+            .get_function(scope)
+            .ok_or(V8Error::NativeInstallation(
+                "TrustedScript code-like allocator",
+            ))?;
     if !factory
         .set_prototype(scope, factory_prototype.into())
         .unwrap_or(false)
@@ -1064,6 +1105,7 @@ pub(super) fn install(
             PROTOTYPE_SCRIPT_URL,
             script_url_prototype.into(),
         )
+        || !hidden_set(scope, factory, SCRIPT_ALLOCATOR, script_allocator.into())
     {
         return Err(V8Error::NativeInstallation("trustedTypes"));
     }

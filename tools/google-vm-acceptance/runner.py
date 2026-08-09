@@ -177,8 +177,8 @@ def main() -> int:
     execution_enabled = not arguments.no_execution_trace
     config = yatouv8.RuntimeConfig(
         url=arguments.url,
-        viewport_width=1920,
-        viewport_height=1080,
+        viewport_width=1280,
+        viewport_height=633,
         get_trace=yatouv8.GetTraceConfig(enabled=True, max_events=200_000),
         execution_trace=yatouv8.ExecutionTraceConfig(
             enabled=execution_enabled,

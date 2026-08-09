@@ -422,6 +422,7 @@
     if (!state) throw new TypeErrorIntrinsic("Illegal invocation");
     return state;
   };
+  const eventIsTrustedGetter = function () { return eventData(this).isTrusted; };
 
   class Event {
     constructor(type, init = {}) {
@@ -432,6 +433,13 @@
         isTrusted: false, timeStamp: performance.now(), stopped: false,
         immediateStopped: false, detail: null
       });
+      // Chrome exposes `isTrusted` as a non-configurable own accessor on every
+      // Event instance rather than as an Event.prototype member.
+      ObjectIntrinsic.defineProperty(this, "isTrusted", {
+        get: eventIsTrustedGetter,
+        enumerable: true,
+        configurable: false
+      });
     }
     get type() { return eventData(this).type; }
     get bubbles() { return eventData(this).bubbles; }
@@ -441,8 +449,30 @@
     get target() { return eventData(this).target; }
     get currentTarget() { return eventData(this).currentTarget; }
     get eventPhase() { return eventData(this).eventPhase; }
-    get isTrusted() { return eventData(this).isTrusted; }
     get timeStamp() { return eventData(this).timeStamp; }
+    get srcElement() { return eventData(this).target; }
+    get returnValue() { return !eventData(this).defaultPrevented; }
+    set returnValue(value) {
+      const state = eventData(this);
+      if (!booleanValue(value) && state.cancelable) state.defaultPrevented = true;
+    }
+    get cancelBubble() { return eventData(this).stopped; }
+    set cancelBubble(value) {
+      if (booleanValue(value)) eventData(this).stopped = true;
+    }
+    composedPath() {
+      const state = eventData(this);
+      return state.target == null ? [] : [state.target];
+    }
+    initEvent(type, bubbles = false, cancelable = false) {
+      const state = eventData(this);
+      state.type = stringValue(type);
+      state.bubbles = booleanValue(bubbles);
+      state.cancelable = booleanValue(cancelable);
+      state.defaultPrevented = false;
+      state.stopped = false;
+      state.immediateStopped = false;
+    }
     preventDefault() { const state = eventData(this); if (state.cancelable) state.defaultPrevented = true; }
     stopPropagation() { eventData(this).stopped = true; }
     stopImmediatePropagation() {
@@ -453,6 +483,10 @@
   data(Event, "CAPTURING_PHASE", 1);
   data(Event, "AT_TARGET", 2);
   data(Event, "BUBBLING_PHASE", 3);
+  data(Event.prototype, "NONE", 0);
+  data(Event.prototype, "CAPTURING_PHASE", 1);
+  data(Event.prototype, "AT_TARGET", 2);
+  data(Event.prototype, "BUBBLING_PHASE", 3);
 
   class CustomEvent extends Event {
     constructor(type, init = {}) {
@@ -480,8 +514,70 @@
       super(type, init);
       for (const key of ["screenX", "screenY", "clientX", "clientY", "button", "buttons", "movementX", "movementY"])
         eventData(this)[key] = numberValue(init[key] || 0);
+      for (const key of ["pageX", "pageY", "x", "y", "offsetX", "offsetY", "layerX", "layerY"])
+        eventData(this)[key] = numberValue(init[key] || 0);
       for (const key of ["ctrlKey", "shiftKey", "altKey", "metaKey"])
         eventData(this)[key] = booleanValue(init[key]);
+      const state = eventData(this);
+      state.relatedTarget = init.relatedTarget || null;
+      state.fromElement = null;
+      state.toElement = null;
+      state.sourceCapabilities = null;
+      state.pseudoTarget = null;
+    }
+    getModifierState(key) {
+      const state = eventData(this);
+      const names = {
+        Alt: "altKey",
+        Control: "ctrlKey",
+        Meta: "metaKey",
+        Shift: "shiftKey",
+      };
+      return booleanValue(state[names[stringValue(key)]]);
+    }
+    initMouseEvent(
+      type,
+      bubbles = false,
+      cancelable = false,
+      view = null,
+      detail = 0,
+      screenX = 0,
+      screenY = 0,
+      clientX = 0,
+      clientY = 0,
+      ctrlKey = false,
+      altKey = false,
+      shiftKey = false,
+      metaKey = false,
+      button = 0,
+      relatedTarget = null,
+    ) {
+      Event.prototype.initEvent.call(this, type, bubbles, cancelable);
+      const state = eventData(this);
+      ObjectIntrinsic.assign(state, {
+        view,
+        detail: numberValue(detail),
+        screenX: numberValue(screenX),
+        screenY: numberValue(screenY),
+        clientX: numberValue(clientX),
+        clientY: numberValue(clientY),
+        pageX: numberValue(clientX),
+        pageY: numberValue(clientY),
+        x: numberValue(clientX),
+        y: numberValue(clientY),
+        offsetX: numberValue(clientX),
+        offsetY: numberValue(clientY),
+        layerX: numberValue(clientX),
+        layerY: numberValue(clientY),
+        ctrlKey: booleanValue(ctrlKey),
+        altKey: booleanValue(altKey),
+        shiftKey: booleanValue(shiftKey),
+        metaKey: booleanValue(metaKey),
+        button: numberValue(button),
+        buttons: 0,
+        which: numberValue(button) + 1,
+        relatedTarget: relatedTarget || null,
+      });
     }
   }
 
@@ -508,8 +604,17 @@
       const listeners = listenersFor(eventTargetReceiver(this));
       const entries = listeners.get(type) || [];
       const capture = typeof options === "object" ? booleanValue(options.capture) : booleanValue(options);
+      // WebIDL's AddEventListenerOptions conversion observes `once`,
+      // `passive`, then `signal`. Google VM uses a passive getter as a
+      // capability probe, so skipping the read changes the VM branch.
+      const once = typeof options === "object" && options !== null
+        ? booleanValue(options.once) : false;
+      if (typeof options === "object" && options !== null) {
+        void booleanValue(options.passive);
+        void options.signal;
+      }
       if (!entries.some(entry => entry.callback === callback && entry.capture === capture))
-        entries.push({ callback, capture, once: booleanValue(options && options.once) });
+        entries.push({ callback, capture, once });
       listeners.set(type, entries);
     }
     removeEventListener(type, callback, options = false) {
@@ -1246,7 +1351,72 @@
       const name = stringValue(tagName).toLowerCase();
       if (name === "iframe") return new HTMLIFrameElement(name, this);
       if (name === "canvas") return new HTMLCanvasElement(name, this);
-      return new HTMLElement(name, this);
+      const element = new HTMLElement(name, this);
+      const interfaceName = ({
+        a: "HTMLAnchorElement", area: "HTMLAreaElement", audio: "HTMLAudioElement",
+        base: "HTMLBaseElement", body: "HTMLBodyElement", br: "HTMLBRElement",
+        button: "HTMLButtonElement", data: "HTMLDataElement",
+        datalist: "HTMLDataListElement", details: "HTMLDetailsElement",
+        dialog: "HTMLDialogElement", div: "HTMLDivElement", dl: "HTMLDListElement",
+        embed: "HTMLEmbedElement", fieldset: "HTMLFieldSetElement",
+        form: "HTMLFormElement", h1: "HTMLHeadingElement", h2: "HTMLHeadingElement",
+        h3: "HTMLHeadingElement", h4: "HTMLHeadingElement", h5: "HTMLHeadingElement",
+        h6: "HTMLHeadingElement", head: "HTMLHeadElement", hr: "HTMLHRElement",
+        html: "HTMLHtmlElement", img: "HTMLImageElement", input: "HTMLInputElement",
+        label: "HTMLLabelElement", legend: "HTMLLegendElement", li: "HTMLLIElement",
+        link: "HTMLLinkElement", map: "HTMLMapElement", meta: "HTMLMetaElement",
+        meter: "HTMLMeterElement", object: "HTMLObjectElement", ol: "HTMLOListElement",
+        optgroup: "HTMLOptGroupElement", option: "HTMLOptionElement",
+        output: "HTMLOutputElement", p: "HTMLParagraphElement",
+        picture: "HTMLPictureElement", pre: "HTMLPreElement",
+        progress: "HTMLProgressElement", script: "HTMLScriptElement",
+        select: "HTMLSelectElement", slot: "HTMLSlotElement", source: "HTMLSourceElement",
+        span: "HTMLSpanElement", style: "HTMLStyleElement", table: "HTMLTableElement",
+        tbody: "HTMLTableSectionElement", td: "HTMLTableCellElement",
+        template: "HTMLTemplateElement", textarea: "HTMLTextAreaElement",
+        tfoot: "HTMLTableSectionElement", th: "HTMLTableCellElement",
+        thead: "HTMLTableSectionElement", time: "HTMLTimeElement",
+        title: "HTMLTitleElement", tr: "HTMLTableRowElement", track: "HTMLTrackElement",
+        ul: "HTMLUListElement", video: "HTMLVideoElement",
+      })[name];
+      const constructor = interfaceName && globalObject[interfaceName];
+      if (typeof constructor === "function" && objectLike(constructor.prototype)) {
+        try { ReflectIntrinsic.setPrototypeOf(element, constructor.prototype); } catch (_error) {}
+      }
+      const state = elementData(element);
+      if (name === "div") state.align = "";
+      if (name === "img") ObjectIntrinsic.assign(state, {
+        alt: "", border: "", complete: true, crossOrigin: null, currentSrc: "",
+        decoding: "auto", fetchPriority: "auto", height: 0, hspace: 0,
+        isMap: false, loading: "eager", longDesc: "", lowsrc: "", name: "",
+        naturalHeight: 0, naturalWidth: 0, referrerPolicy: "", sizes: "",
+        src: "", srcset: "", useMap: "", vspace: 0, width: 0, x: 0, y: 0,
+      });
+      return element;
+    }
+    createEvent(interfaceName) {
+      switch (stringValue(interfaceName).toLowerCase()) {
+        case "event":
+        case "events":
+        case "htmlevents":
+          return new Event("");
+        case "customevent":
+          return new CustomEvent("");
+        case "uievent":
+        case "uievents":
+          return new UIEvent("");
+        case "mouseevent":
+        case "mouseevents":
+          {
+            const event = new MouseEvent("");
+            eventData(event).which = 1;
+            return event;
+          }
+        default:
+          throw new TypeErrorIntrinsic(
+            `The provided event type ('${stringValue(interfaceName)}') is invalid`
+          );
+      }
     }
     createTextNode(value) { return new Text(value, this); }
     createDocumentFragment() { return new DocumentFragment(this); }
@@ -1778,8 +1948,8 @@
   data(globalObject, "origin", location.origin);
   data(globalObject, "innerWidth", config.viewport.width);
   data(globalObject, "innerHeight", config.viewport.height);
-  data(globalObject, "outerWidth", profile.screen_width);
-  data(globalObject, "outerHeight", profile.screen_height);
+  data(globalObject, "outerWidth", profile.outer_width);
+  data(globalObject, "outerHeight", profile.outer_height);
   data(globalObject, "devicePixelRatio", config.viewport.device_scale_factor);
   data(globalObject, "isSecureContext", location.protocol === "https:");
   data(globalObject, "crossOriginIsolated", false);
@@ -1845,6 +2015,7 @@
     if (spec.native_like) nativeSources.set(callable, `function ${spec.name || ""}() { [native code] }`);
     return callable;
   };
+  markNative(eventIsTrustedGetter, { name: "get isTrusted", length: 0, native_like: true });
   const nativeToString = markNative(function toString() {
     if (nativeSources.has(this)) return nativeSources.get(this);
     return ReflectIntrinsic.apply(originalFunctionToString, this, []);
@@ -1905,18 +2076,28 @@
     return slots;
   };
   const accessorDefault = (path, key, receiver) => {
+    const finish = value => {
+      // A diagnostic Proxy logs the same read after Reflect.get returns.  Use
+      // the bounded/depth-aware path here so raw generated instances remain
+      // observable without duplicating proxied reads or bypassing maxEvents.
+      logGet(path, stringValue(key), value);
+      return value;
+    };
     const slots = slotsFor(receiver);
-    if (slots.has(key)) return slots.get(key);
+    if (slots.has(key)) return finish(slots.get(key));
     const node = stateFor(nodeState, receiver);
-    if (node && ObjectIntrinsic.prototype.hasOwnProperty.call(node, key)) return node[key];
+    if (node && ObjectIntrinsic.prototype.hasOwnProperty.call(node, key)) return finish(node[key]);
     const element = stateFor(elementState, receiver);
-    if (element && ObjectIntrinsic.prototype.hasOwnProperty.call(element, key)) return element[key];
+    if (element && ObjectIntrinsic.prototype.hasOwnProperty.call(element, key)) return finish(element[key]);
     const documentValues = stateFor(documentState, receiver);
-    if (documentValues && ObjectIntrinsic.prototype.hasOwnProperty.call(documentValues, key)) return documentValues[key];
+    if (documentValues && ObjectIntrinsic.prototype.hasOwnProperty.call(documentValues, key))
+      return finish(documentValues[key]);
     const eventValues = stateFor(eventState, receiver);
-    if (eventValues && ObjectIntrinsic.prototype.hasOwnProperty.call(eventValues, key)) return eventValues[key];
+    if (eventValues && ObjectIntrinsic.prototype.hasOwnProperty.call(eventValues, key))
+      return finish(eventValues[key]);
     const responseValues = stateFor(responseState, receiver);
-    if (responseValues && ObjectIntrinsic.prototype.hasOwnProperty.call(responseValues, key)) return responseValues[key];
+    if (responseValues && ObjectIntrinsic.prototype.hasOwnProperty.call(responseValues, key))
+      return finish(responseValues[key]);
     if (path === "Navigator.prototype") {
       const values = {
         userAgent: profile.user_agent, appVersion: profile.user_agent.replace(/^Mozilla\//, ""),
@@ -1926,11 +2107,11 @@
         webdriver: false, cookieEnabled: true, onLine: true, product: "Gecko",
         productSub: "20030107", vendor: "Google Inc.", vendorSub: "", pdfViewerEnabled: true
       };
-      if (ObjectIntrinsic.prototype.hasOwnProperty.call(values, key)) return values[key];
-      if (key === "plugins") return plugins;
-      if (key === "mimeTypes") return mimeTypes;
-      if (key === "permissions") return permissions;
-      if (key === "connection") return connection;
+      if (ObjectIntrinsic.prototype.hasOwnProperty.call(values, key)) return finish(values[key]);
+      if (key === "plugins") return finish(plugins);
+      if (key === "mimeTypes") return finish(mimeTypes);
+      if (key === "permissions") return finish(permissions);
+      if (key === "connection") return finish(connection);
     }
     if (path === "Screen.prototype") {
       const values = {
@@ -1939,7 +2120,7 @@
         colorDepth: profile.screen_depth, pixelDepth: profile.screen_depth,
         availLeft: 0, availTop: 0, orientation
       };
-      if (ObjectIntrinsic.prototype.hasOwnProperty.call(values, key)) return values[key];
+      if (ObjectIntrinsic.prototype.hasOwnProperty.call(values, key)) return finish(values[key]);
     }
     if (path === "Performance.prototype") {
       const values = {
@@ -1949,7 +2130,7 @@
         memory: performanceMemory,
         interactionCount: 0
       };
-      if (ObjectIntrinsic.prototype.hasOwnProperty.call(values, key)) return values[key];
+      if (ObjectIntrinsic.prototype.hasOwnProperty.call(values, key)) return finish(values[key]);
     }
     if (path === "Document.prototype") {
       const values = {
@@ -1958,11 +2139,15 @@
         characterSet: "UTF-8", charset: "UTF-8", inputEncoding: "UTF-8",
         contentType: "text/html", defaultView: globalObject, currentScript: null
       };
-      if (ObjectIntrinsic.prototype.hasOwnProperty.call(values, key)) return values[key];
+      if (ObjectIntrinsic.prototype.hasOwnProperty.call(values, key)) return finish(values[key]);
     }
-    if (/^(on|aria)/.test(key)) return null;
-    if (/^(hidden|disabled|draggable|spellcheck|is|was|webkitHidden)/.test(key)) return false;
-    return null;
+    if ((path === "globalThis" || path === "Window.prototype")
+      && (key === "name" || key === "status"))
+      return finish("");
+    if (/^(on|aria)/.test(key)) return finish(null);
+    if (/^(hidden|disabled|draggable|spellcheck|is|was|webkitHidden)/.test(key))
+      return finish(false);
+    return finish(null);
   };
   const stubFunction = spec => markNative(function () {}, spec);
   const semanticMethod = (path, key) => {
@@ -2251,6 +2436,24 @@
     for (const member of spec.members) applyMember(spec.path, object, member);
     reorderConfigurableMembers(object, spec);
     registerTraceTarget(object, spec.path);
+  }
+  // Image/Audio/Option are legacy factory aliases, not distinct WebIDL
+  // interfaces.  Both names share the canonical element prototype; whichever
+  // manifest row is applied first must not change the instance brand.
+  for (const [path, tag] of [
+    ["HTMLImageElement.prototype", "HTMLImageElement"],
+    ["HTMLAudioElement.prototype", "HTMLAudioElement"],
+    ["HTMLOptionElement.prototype", "HTMLOptionElement"],
+  ]) {
+    const prototype = surfaceObjects.get(path);
+    const descriptor = objectLike(prototype)
+      && ObjectIntrinsic.getOwnPropertyDescriptor(prototype, Symbol.toStringTag);
+    if (descriptor && descriptor.configurable) {
+      ObjectIntrinsic.defineProperty(prototype, Symbol.toStringTag, {
+        ...descriptor,
+        value: tag,
+      });
+    }
   }
   const globalSpec = interfaces.find(spec => spec.path === "globalThis");
   if (globalSpec) {

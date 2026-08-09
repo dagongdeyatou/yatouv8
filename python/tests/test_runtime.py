@@ -389,6 +389,180 @@ class RuntimeTests(unittest.TestCase):
             ]
             self.assertEqual(calls, ["createPolicy", "createScript", "isScript", "isScript"])
 
+    def test_trusted_script_is_accepted_by_eval(self) -> None:
+        with yatouv8.Runtime() as runtime:
+            result = runtime.eval(
+                """
+                (() => {
+                    const policy = trustedTypes.createPolicy(
+                        "python-eval-regression",
+                        {createScript: value => value},
+                    );
+                    const script = policy.createScript("40 + 2");
+                    const evaluated = globalThis.eval(script);
+                    return {
+                        evaluated,
+                        evalNative: Function.prototype.toString
+                            .call(eval)
+                            .includes("[native code]"),
+                        evalOwnKeys: Reflect.ownKeys(eval).map(String),
+                    };
+                })()
+                """
+            )
+        self.assertEqual(
+            result,
+            {
+                "evaluated": 42,
+                "evalNative": True,
+                "evalOwnKeys": ["length", "name"],
+            },
+        )
+
+    def test_event_listener_observes_passive_option(self) -> None:
+        with yatouv8.Runtime() as runtime:
+            result = runtime.eval(
+                """
+                (() => {
+                    const reads = [];
+                    const options = {
+                        get capture() { reads.push("capture"); return false; },
+                        get once() { reads.push("once"); return false; },
+                        get passive() { reads.push("passive"); return false; },
+                        get signal() { reads.push("signal"); return undefined; },
+                    };
+                    addEventListener("yatou-options", () => {}, options);
+                    return reads;
+                })()
+                """
+            )
+        self.assertEqual(result, ["capture", "once", "passive", "signal"])
+
+    def test_event_instance_matches_chrome_ownership_and_legacy_state(self) -> None:
+        with yatouv8.Runtime() as runtime:
+            result = runtime.eval(
+                """
+                (() => {
+                    const event = new Event("", {cancelable: true});
+                    const legacy = document.createEvent("Event");
+                    const trusted = Object.getOwnPropertyDescriptor(
+                        event,
+                        "isTrusted",
+                    );
+                    const before = [
+                        event.isTrusted,
+                        event.returnValue,
+                        event.cancelBubble,
+                        event.defaultPrevented,
+                    ];
+                    event.returnValue = false;
+                    event.cancelBubble = true;
+                    return {
+                        ownKeys: Reflect.ownKeys(event).map(String),
+                        legacy: {
+                            tag: Object.prototype.toString.call(legacy),
+                            type: legacy.type,
+                            preventDefault: Function.prototype.toString.call(
+                                legacy.preventDefault,
+                            ),
+                        },
+                        trusted: {
+                            own: Object.prototype.hasOwnProperty.call(
+                                event,
+                                "isTrusted",
+                            ),
+                            getter: typeof trusted.get,
+                            enumerable: trusted.enumerable,
+                            configurable: trusted.configurable,
+                            source: Function.prototype.toString.call(trusted.get),
+                        },
+                        before,
+                        after: [
+                            event.returnValue,
+                            event.cancelBubble,
+                            event.defaultPrevented,
+                        ],
+                        constants: [
+                            Event.NONE,
+                            Event.CAPTURING_PHASE,
+                            Event.AT_TARGET,
+                            Event.BUBBLING_PHASE,
+                            event.NONE,
+                            event.CAPTURING_PHASE,
+                            event.AT_TARGET,
+                            event.BUBBLING_PHASE,
+                        ],
+                    };
+                })()
+                """
+            )
+        self.assertEqual(result["ownKeys"], ["isTrusted"])
+        self.assertEqual(
+            result["legacy"],
+            {
+                "tag": "[object Event]",
+                "type": "",
+                "preventDefault": "function preventDefault() { [native code] }",
+            },
+        )
+        self.assertEqual(
+            result["trusted"],
+            {
+                "own": True,
+                "getter": "function",
+                "enumerable": True,
+                "configurable": False,
+                "source": "function get isTrusted() { [native code] }",
+            },
+        )
+        self.assertEqual(result["before"], [False, True, False, False])
+        self.assertEqual(result["after"], [False, True, True])
+        self.assertEqual(result["constants"], [0, 1, 2, 3, 0, 1, 2, 3])
+
+    def test_generated_elements_window_strings_and_dimensions_match_chrome150(self) -> None:
+        with yatouv8.Runtime() as runtime:
+            result = runtime.eval(
+                """
+                (() => {
+                    const image = document.createElement("img");
+                    const div = document.createElement("div");
+                    return {
+                        name: window.name,
+                        status: window.status,
+                        defaultStatusType: typeof window.defaultStatus,
+                        dimensions: [
+                            innerWidth,
+                            innerHeight,
+                            outerWidth,
+                            outerHeight,
+                            screen.width,
+                            screen.height,
+                        ],
+                        image: [
+                            Object.prototype.toString.call(image),
+                            image.constructor.name,
+                            image.src,
+                            image.alt,
+                        ],
+                        div: [
+                            Object.prototype.toString.call(div),
+                            div.constructor.name,
+                            div.align,
+                        ],
+                    };
+                })()
+                """
+            )
+        self.assertEqual(result["name"], "")
+        self.assertEqual(result["status"], "")
+        self.assertEqual(result["defaultStatusType"], "undefined")
+        self.assertEqual(result["dimensions"], [1280, 633, 1280, 720, 1920, 1080])
+        self.assertEqual(
+            result["image"],
+            ["[object HTMLImageElement]", "HTMLImageElement", "", ""],
+        )
+        self.assertEqual(result["div"], ["[object HTMLDivElement]", "HTMLDivElement", ""])
+
     def test_td_candidate_api_semantics_match_chrome150(self) -> None:
         with yatouv8.Runtime() as runtime:
             result = runtime.eval(
@@ -490,7 +664,7 @@ class RuntimeTests(unittest.TestCase):
             self.assertEqual(result["mediaTag"], "[object MediaQueryList]")
             self.assertTrue(result["mediaMatches"])
             self.assertEqual(result["viewportTag"], "[object VisualViewport]")
-            self.assertEqual(result["viewport"], [1280, 720, 1])
+            self.assertEqual(result["viewport"], [1280, 633, 1])
             self.assertEqual(
                 result["canvas"],
                 [300, 150, "[object CanvasRenderingContext2D]", None, True],
