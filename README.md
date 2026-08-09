@@ -6,8 +6,9 @@
 > BotGuard bytecode 仍不在完成声明内。SG_SS 定向本地门禁已达到 12,841/12,841
 > descriptor、9,565/9,565 callable metadata 和 0 failure；未经纳入 corpus 的
 > 私有 VM 中 `sgs` 初始化不属于该完成声明。当前在线 Google Search challenge 已能
-> 生成并在同 session 第二跳消费 SG_SS，但 fresh curl 与 fresh Chrome control 均被
-> Google 的后续 `/sorry/` 风险门禁拒绝，因此尚未宣称 SearchResultsPage 在线通过。
+> 生成 SG_SS，并通过同 Session、新 Session 和无 Session 的模块级
+> `curl_cffi.requests.get` 完整 Cookie 第二跳验收；只传 SG_SS 的负对照仍进入
+> `/sorry/`。
 
 `yatouv8` 是面向 Windows 11 + Chrome 150 的证据驱动型 V8 浏览器宿主：先采集 Chrome 行为，再通过差异、因果 blocker、Manifest 和生成器收敛兼容层。
 
@@ -150,6 +151,58 @@ with yatouv8.Runtime(config) as runtime:
 
 `result` 同时返回 value、cookies、pending navigation、drain 结果与 trace stats。
 在线 oracle 必须保持 GET/Inspector trace 关闭；诊断 Proxy 不能进入 token 生成路径。
+
+不维护 Session 对象时，使用正式的高层 challenge API：
+
+```python
+import time
+import yatouv8
+from curl_cffi import requests
+
+proxy = "http://127.0.0.1:7890"
+proxies = {"http": proxy, "https": proxy}
+jar = requests.Cookies()
+
+def merge(response):
+    for item in [*response.history, response]:
+        jar.update(item.cookies)
+
+home = requests.get(
+    "https://www.google.com/",
+    cookies=jar,
+    proxies=proxies,
+    impersonate="chrome146",
+    headers=yatouv8.browser_headers(),
+)
+merge(home)
+
+request_start_ms = time.time_ns() / 1_000_000
+first = requests.get(
+    "https://www.google.com/search?q=亚非",
+    cookies=jar,
+    proxies=proxies,
+    impersonate="chrome146",
+    headers=yatouv8.browser_headers(referer=str(home.url)),
+)
+merge(first)
+
+bundle = yatouv8.solve_with_yatouv8(
+    first,
+    jar,
+    navigation_start_ms=request_start_ms,
+)
+bundle.apply_cookies(jar)
+second = requests.get(
+    cookies=jar,
+    proxies=proxies,
+    impersonate="chrome146",
+    **bundle.request_kwargs(),
+)
+```
+
+`ChallengeBundle` 包含 SG_SS、完整 Cookie、带 `sei` 的导航 URL 和下一跳请求头；
+旧 Session 可以在求解前关闭，也可以完全不创建 Session。不能把完整 Cookie jar
+退化成仅含 SG_SS 的字典。
 
 执行完整同会话在线硬门禁：
 

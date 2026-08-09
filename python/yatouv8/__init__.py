@@ -14,10 +14,18 @@ from .runtime import (
     Runtime,
     RuntimeConfig,
 )
+from .challenge import (
+    ChallengeBundle,
+    ChallengeSolveError,
+    browser_headers,
+    solve_with_yatouv8,
+)
 
 __all__ = [
     "BrowserProfile",
+    "ChallengeBundle",
     "ChallengeResult",
+    "ChallengeSolveError",
     "Context",
     "ExecutionTraceConfig",
     "GetTraceConfig",
@@ -27,6 +35,8 @@ __all__ = [
     "Runtime",
     "RuntimeConfig",
     "analyze_execution_trace",
+    "browser_headers",
     "build_info",
+    "solve_with_yatouv8",
     "v8_smoke_value",
 ]
