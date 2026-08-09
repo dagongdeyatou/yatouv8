@@ -41,6 +41,23 @@ mod code_like {
     }
 }
 
+#[cfg(not(all(windows, target_env = "msvc")))]
+#[allow(unsafe_code)]
+mod code_like {
+    unsafe extern "C" {
+        // Itanium C++ ABI symbol used by Linux and macOS toolchains.
+        #[link_name = "_ZN2v814ObjectTemplate11SetCodeLikeEv"]
+        fn object_template_set_code_like(template: *const v8::ObjectTemplate);
+    }
+
+    pub(super) fn set(template: &v8::ObjectTemplate) {
+        // SAFETY: rusty_v8::Local<ObjectTemplate> dereferences to the same
+        // v8::ObjectTemplate C++ object. Under the Itanium ABI the implicit
+        // `this` pointer is passed as the first argument.
+        unsafe { object_template_set_code_like(template) };
+    }
+}
+
 #[derive(Clone, Copy)]
 enum TrustedKind {
     Html,

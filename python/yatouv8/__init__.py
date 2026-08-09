@@ -1,4 +1,4 @@
-"""Evidence-driven Chrome-compatible V8 host for Windows 11."""
+"""Evidence-driven Chrome-compatible V8 host."""
 
 from ._native import build_info, v8_smoke_value
 from .execution_trace import analyze_execution_trace

@@ -14,7 +14,7 @@ STPyV8 提供了清晰的 V8 embedding 参考，但 Boost.Python 和其 V8 版�
 - Python 扩展使用 PyO3。
 - 锁定 `v8 = 150.4.0`。
 - 设置 `V8_FROM_SOURCE=1`，不使用预编译 V8 archive。
-- 锁定 Rust 1.97.1、PyO3 0.29.2 和 Python 3.13+。
+- 锁定 Rust 1.97.1、PyO3 0.29.2，并构建 CPython 3.10–3.14 的版本化 ABI wheel。
 - 项目使用 Apache-2.0。
 
 ## 结果

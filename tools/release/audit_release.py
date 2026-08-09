@@ -30,7 +30,12 @@ def audit(wheel: pathlib.Path, sbom: pathlib.Path) -> dict[str, Any]:
         names = archive.namelist()
     license_present = any(name.endswith(".dist-info/licenses/LICENSE") for name in names)
     notice_present = any(name.endswith(".dist-info/licenses/NOTICE") for name in names)
-    zlib_bundled = any(re.search(r"yatouv8\.libs/zlib[^/]*\.dll$", name, re.IGNORECASE) for name in names)
+    zlib_bundled = any(
+        re.search(r"yatouv8\.libs/zlib[^/]*\.dll$", name, re.IGNORECASE)
+        for name in names
+    )
+    windows_wheel = "-win_" in wheel.name.lower()
+    native_dependency_policy_ok = zlib_bundled if windows_wheel else True
     report = {
         "milestone": "m10",
         "wheel": {
@@ -40,6 +45,7 @@ def audit(wheel: pathlib.Path, sbom: pathlib.Path) -> dict[str, Any]:
             "license_present": license_present,
             "notice_present": notice_present,
             "zlib_bundled": zlib_bundled,
+            "native_dependency_policy_ok": native_dependency_policy_ok,
         },
         "sbom": {
             "filename": sbom.name,
@@ -52,7 +58,7 @@ def audit(wheel: pathlib.Path, sbom: pathlib.Path) -> dict[str, Any]:
     report["accepted"] = (
         license_present
         and notice_present
-        and zlib_bundled
+        and native_dependency_policy_ok
         and not missing_licenses
         and report["lockfile_present"]
     )

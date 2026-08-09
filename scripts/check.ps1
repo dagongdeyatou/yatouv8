@@ -50,6 +50,7 @@ Invoke-CargoStep -Arguments @('clippy', '--workspace', '--all-targets', '--', '-
 Invoke-PythonStep -Arguments @(
     '-m', 'compileall', '-q',
     'tools/chrome-collector',
+    'tools/build',
     'tools/google-vm-collector',
     'tools/google-vm-acceptance',
     'tools/google-vm-corpus',
@@ -60,6 +61,8 @@ Invoke-PythonStep -Arguments @(
     'tools/trace-inspector'
 )
 Invoke-PythonStep -Arguments @('-m', 'unittest', 'discover', 'tools/chrome-collector/tests', '-v')
+Invoke-PythonStep -Arguments @('-m', 'unittest', 'discover', 'tools/build/tests', '-v')
 Invoke-PythonStep -Arguments @('-m', 'unittest', 'discover', 'tools/google-vm-acceptance', '-p', 'test_*.py', '-v')
 Invoke-PythonStep -Arguments @('-m', 'unittest', 'discover', 'tools/surface-codegen/tests', '-v')
 Invoke-PythonStep -Arguments @('-m', 'unittest', 'discover', 'tools/trace-inspector/tests', '-v')
+Invoke-PythonStep -Arguments @('-m', 'unittest', 'discover', 'tools/release/tests', '-v')

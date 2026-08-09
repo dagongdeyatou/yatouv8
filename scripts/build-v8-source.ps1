@@ -92,81 +92,6 @@ function Install-PinnedLibClang {
     return (Split-Path -Parent $libClang)
 }
 
-function Get-V8RegistrySourceRoot {
-    $cargoHome = if ($env:CARGO_HOME) { $env:CARGO_HOME } else { Join-Path $env:USERPROFILE '.cargo' }
-    $registryRoot = Join-Path $cargoHome 'registry\src'
-    $v8Roots = Get-ChildItem -LiteralPath $registryRoot -Directory -ErrorAction Stop |
-        ForEach-Object { Get-ChildItem -LiteralPath $_.FullName -Directory -Filter 'v8-150.4.0' }
-    $v8Root = $v8Roots | Select-Object -First 1
-    if (!$v8Root) {
-        throw 'v8 150.4.0 source was not found in the Cargo registry cache'
-    }
-    return $v8Root.FullName
-}
-
-function Install-PinnedIcuData {
-    param([Parameter(Mandatory)] [string]$V8Root)
-
-    $icuData = Join-Path $V8Root 'third_party\icu\common\icudtl.dat'
-    $expectedHash = '1CF67874B5A87A8363A86FB3F81E3CBBED54D389062DAB8FB52308D5CF8C8612'
-    if (Test-Path -LiteralPath $icuData) {
-        $actualHash = (Get-FileHash -Algorithm SHA256 -LiteralPath $icuData).Hash
-        if ($actualHash -eq $expectedHash) {
-            return $icuData
-        }
-        throw "Existing ICU data checksum mismatch: $actualHash"
-    }
-
-    $url = 'https://chromium.googlesource.com/chromium/deps/icu/+/ee5f27adc28bd3f15b2c293f726d14d2e336cbd5/common/icudtl.dat?format=TEXT'
-    $response = Invoke-WebRequest -UseBasicParsing -Uri $url -TimeoutSec 180
-    $encoded = if ($response.Content -is [byte[]]) {
-        [Text.Encoding]::ASCII.GetString($response.Content)
-    } else {
-        [string]$response.Content
-    }
-    $bytes = [Convert]::FromBase64String($encoded)
-    $actualHash = [Convert]::ToHexString([Security.Cryptography.SHA256]::HashData($bytes))
-    if ($actualHash -ne $expectedHash) {
-        throw "ICU data checksum mismatch: expected $expectedHash, got $actualHash"
-    }
-
-    New-Item -ItemType Directory -Force -Path (Split-Path -Parent $icuData) | Out-Null
-    [IO.File]::WriteAllBytes($icuData, $bytes)
-    return $icuData
-}
-
-function Install-PinnedChromiumRustSources {
-    param([Parameter(Mandatory)] [string]$V8Root)
-
-    $target = Join-Path $V8Root 'third_party\rust'
-    $probe = Join-Path $target 'chromium_crates_io\vendor\icu_calendar_data-v2\build.rs'
-    if (Test-Path -LiteralPath $probe) {
-        return $target
-    }
-
-    $url = 'https://chromium.googlesource.com/chromium/src/third_party/rust/+archive/26e8ff47f18a8d28d6187a04b6a16cb7332356f8.tar.gz'
-    $expectedHash = '23326DC97CC82B2E0B551F823C8AFB0A91524ABCFE078C50D38DBDF37FE0EB92'
-    $downloadRoot = Join-Path $env:LOCALAPPDATA 'yatouv8\downloads'
-    $archive = Join-Path $downloadRoot 'chromium-third-party-rust-26e8ff47.tar.gz'
-    New-Item -ItemType Directory -Force -Path $downloadRoot | Out-Null
-
-    if (!(Test-Path -LiteralPath $archive) -or
-        (Get-FileHash -Algorithm SHA256 -LiteralPath $archive).Hash -ne $expectedHash) {
-        Invoke-WebRequest -UseBasicParsing -Uri $url -OutFile $archive -TimeoutSec 600
-    }
-    $actualHash = (Get-FileHash -Algorithm SHA256 -LiteralPath $archive).Hash
-    if ($actualHash -ne $expectedHash) {
-        throw "Chromium Rust archive checksum mismatch: expected $expectedHash, got $actualHash"
-    }
-
-    New-Item -ItemType Directory -Force -Path $target | Out-Null
-    & tar -xzf $archive -C $target
-    if ($LASTEXITCODE -ne 0 -or !(Test-Path -LiteralPath $probe)) {
-        throw 'Failed to hydrate Chromium Rust vendor sources'
-    }
-    return $target
-}
-
 $gn = Install-PinnedBuildTool `
     -Name 'gn' `
     -Url 'https://chrome-infra-packages.appspot.com/dl/gn/gn/windows-amd64/+/git_revision:3357c4f51b1a9e676378c695dd9c7e9911c35ee6' `
@@ -181,13 +106,16 @@ $ninja = Install-PinnedBuildTool `
 
 $libClangPath = Install-PinnedLibClang
 
-& $cargo fetch --locked
+$preparationManifest = Join-Path $env:TEMP 'yatouv8-v8-source-preparation.json'
+& $pythonCandidates[0] tools\build\prepare_v8_source.py `
+    --cargo $cargo `
+    --output $preparationManifest | Out-Host
 if ($LASTEXITCODE -ne 0) {
-    exit $LASTEXITCODE
+    throw 'V8 source dependency preparation failed'
 }
-$v8Root = Get-V8RegistrySourceRoot
-$icuData = Install-PinnedIcuData -V8Root $v8Root
-$chromiumRust = Install-PinnedChromiumRustSources -V8Root $v8Root
+$preparation = Get-Content -Raw -LiteralPath $preparationManifest | ConvertFrom-Json
+$icuData = $preparation.icu_data.path
+$chromiumRust = $preparation.chromium_rust.path
 
 $env:V8_FROM_SOURCE = '1'
 $env:PYTHON = $pythonCandidates[0]

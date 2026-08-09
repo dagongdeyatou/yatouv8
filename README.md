@@ -10,7 +10,10 @@
 > `curl_cffi.requests.get` 完整 Cookie 第二跳验收；只传 SG_SS 的负对照仍进入
 > `/sorry/`。
 
-`yatouv8` 是面向 Windows 11 + Chrome 150 的证据驱动型 V8 浏览器宿主：先采集 Chrome 行为，再通过差异、因果 blocker、Manifest 和生成器收敛兼容层。
+`yatouv8` 是以 Windows 11 + Chrome 150 为浏览器行为基线的证据驱动型 V8
+宿主：先采集 Chrome 行为，再通过差异、因果 blocker、Manifest 和生成器收敛
+兼容层。原生运行时正在扩展到 Windows、Linux 和 macOS；当前已验收发布产物仍以
+Windows x64 为准，Linux x64 的 manylinux 构建门禁已进入开发流水线。
 
 ![yatouv8 总体架构](docs/architecture/yatouv8-overview.png)
 
@@ -38,6 +41,10 @@
 .\scripts\build-wheel.ps1
 .\scripts\build-wheel.ps1 -PythonExecutable "D:\language\python-3.10.1\python.exe"
 ```
+
+Linux x86_64 使用固定的 `manylinux_2_28` 容器，从同一份 V8 150.4.0 源码构建
+CPython 3.10–3.14 wheel。入口、约束和验收项见
+[Linux wheel 构建](docs/building-linux.md)。
 
 使用正式的 persistent runtime：
 

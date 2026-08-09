@@ -48,3 +48,73 @@ jobs:
           name: yatouv8-win-amd64-py${{ matrix.python-version }}
           path: dist/*.whl
           if-no-files-found: error
+
+  linux-v8-wheels:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 240
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build CPython 3.10-3.14 manylinux x86_64 wheels
+        uses: PyO3/maturin-action@86b9d133d34bc1b40018696f782949dac11bd380 # v1.49.4
+        with:
+          command: build
+          maturin-version: v1.14.1
+          rust-toolchain: 1.97.1
+          target: x86_64
+          manylinux: 2_28
+          container: quay.io/pypa/manylinux_2_28_x86_64@sha256:443eabd378e140996780a772e12c1a1ef10551da933fe76d74a1bab61f68a7b7
+          before-script-linux: source scripts/prepare-manylinux.sh
+          sccache: true
+          args: >-
+            --release --locked --compatibility pypi --out dist
+            -i python3.10 python3.11 python3.12 python3.13 python3.14
+      - name: Verify wheel payloads and tags
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          count=0
+          for wheel in dist/*.whl; do
+            tag="$(basename "${wheel}" | sed -nE 's/^yatouv8-[^-]+-(cp3(10|11|12|13|14))-.*$/\1/p')"
+            test -n "${tag}"
+            python tools/build/verify_wheel.py \
+              --wheel "${wheel}" \
+              --expected-python "${tag}" \
+              --expected-platform manylinux_2_28_x86_64
+            count=$((count + 1))
+          done
+          test "${count}" -eq 5
+      - uses: actions/upload-artifact@v4
+        with:
+          name: yatouv8-manylinux-2-28-x86-64
+          path: dist/*.whl
+          if-no-files-found: error
+
+  linux-wheel-install:
+    needs: linux-v8-wheels
+    runs-on: ubuntu-24.04
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.10", "3.11", "3.12", "3.13", "3.14"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+      - uses: actions/download-artifact@v4
+        with:
+          name: yatouv8-manylinux-2-28-x86-64
+          path: dist
+      - name: Install matching wheel without a compiler
+        run: >-
+          python -m pip install --disable-pip-version-check --no-input
+          --no-index --no-deps --find-links dist yatouv8==0.1.0
+      - name: Run installed-wheel tests
+        run: python -m unittest discover -s python/tests -v
+      - name: Run native V8 smoke
+        run: >-
+          python -c "import yatouv8;
+          assert yatouv8.v8_smoke_value() == '42';
+          r = yatouv8.Runtime();
+          assert r.eval('21 * 2') == 42;
+          r.close()"
