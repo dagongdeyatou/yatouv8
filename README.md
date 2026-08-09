@@ -31,7 +31,7 @@
 
 ## Python API
 
-构建并验证 CPython 3.10 或 3.13 Windows wheel：
+构建并验证 CPython 3.10–3.14 Windows wheel：
 
 ```powershell
 .\scripts\build-wheel.ps1
@@ -170,7 +170,7 @@ py -3.13 tools\google-vm-acceptance\live_runner.py `
 - Windows 11 x64
 - Visual Studio 2022 C++ toolchain
 - Windows SDK 10.0.26100.0 或兼容版本
-- Python 3.10+
+- Python 3.10–3.14
 - Rust 1.97.1
 
 从源码构建并执行 V8 150：
