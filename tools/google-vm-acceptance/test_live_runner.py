@@ -80,6 +80,29 @@ class GoogleVmLiveRunnerTests(unittest.TestCase):
         self.assertEqual(record["value_length"], 7)
         self.assertEqual(len(record["value_sha256"]), 64)
 
+    def test_navigation_uses_geo_redirected_entrypoint(self) -> None:
+        source = "https://www.google.com.hk/search?q=亚非"
+        self.assertTrue(
+            runner.valid_navigation(
+                {
+                    "from": source,
+                    "kind": "replace",
+                    "url": source + "&sei=fixture",
+                },
+                source_url=source,
+            )
+        )
+        self.assertFalse(
+            runner.valid_navigation(
+                {
+                    "from": source,
+                    "kind": "replace",
+                    "url": "https://www.google.com/search?q=亚非&sei=fixture",
+                },
+                source_url=source,
+            )
+        )
+
 
 if __name__ == "__main__":
     unittest.main()

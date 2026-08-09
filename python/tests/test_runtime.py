@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import concurrent.futures
+from collections.abc import Iterator, Mapping
 import datetime
 from enum import Enum
 import time
@@ -10,6 +11,39 @@ import yatouv8
 
 
 class RuntimeTests(unittest.TestCase):
+    def test_cookiejar_precedes_mapping_for_duplicate_cookie_names(self) -> None:
+        class Cookie:
+            def __init__(self, domain: str) -> None:
+                self.name = "__Secure-STRP"
+                self.value = domain
+                self.domain = domain
+                self.path = "/"
+                self.secure = True
+                self.expires = None
+                self.rest = {}
+
+        class CurlCookies(Mapping[str, str]):
+            jar = [Cookie(".google.com"), Cookie(".google.com.hk")]
+
+            def __getitem__(self, _key: str) -> str:
+                raise AssertionError("name-only lookup would lose cookie domain")
+
+            def __iter__(self) -> Iterator[str]:
+                return iter(["__Secure-STRP"])
+
+            def __len__(self) -> int:
+                return 1
+
+        with yatouv8.Runtime(
+            yatouv8.RuntimeConfig(url="https://www.google.com/search?q=yatouv8")
+        ) as runtime:
+            imported = runtime.import_cookies(CurlCookies())
+            exported = runtime.export_cookies()
+
+        self.assertEqual(imported, 1)
+        self.assertEqual(len(exported), 1)
+        self.assertEqual(exported[0]["domain"], "google.com")
+
     def test_curl_response_builds_causal_navigation_and_system_clock(self) -> None:
         class Info(Enum):
             NAMELOOKUP_TIME = 1

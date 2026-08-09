@@ -65,3 +65,10 @@ SG_SS 并触发消费，所以不能再用 trace event 数量或 navigator 子�
 长期用户 Chrome profile 则能直接打开同一搜索。因此当前证据把剩余差异定位到 fresh
 session / Google 风险状态，不能再把它单独归因于 yatouv8 API 缺口，也不能据此宣称
 在线搜索已通过。正式在线入口为 `tools/google-vm-acceptance/live_runner.py`。
+
+2026-08-09 代理复测还发现并修复了一个真实 handoff 缺陷：当前 mihomo 节点会把
+`www.google.com` 地理重定向到 `www.google.com.hk`，Cookie jar 因而可能同时持有
+`.google.com` 与 `.google.com.hk` 的同名 `__Secure-STRP`。curl_cffi 的 Cookies 同时
+实现 Mapping，旧代码走 `items()` 会抛出 `CookieConflict`；现在优先迭代底层 CookieJar，
+保留 domain/path 身份，并以实际重定向后的 `.google.com.hk/search` 作为 Runtime URL
+和 `location.replace` 同入口校验基准。

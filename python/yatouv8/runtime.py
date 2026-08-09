@@ -394,10 +394,14 @@ class Runtime:
         """Import a mapping, CookieJar, or curl_cffi-compatible cookie collection."""
 
         normalized: list[dict[str, Any]] = []
-        if isinstance(cookies, Mapping):
-            normalized = [{"name": str(name), "value": str(value)} for name, value in cookies.items()]
-        elif hasattr(cookies, "jar"):
+        # curl_cffi.Cookies implements Mapping, but Mapping.items() resolves by
+        # name and raises CookieConflict when geo redirects leave the same name
+        # on .google.com and .google.com.hk.  Iterate its backing CookieJar
+        # first so domain/path identity is preserved.
+        if hasattr(cookies, "jar"):
             cookies = cookies.jar
+        elif isinstance(cookies, Mapping):
+            normalized = [{"name": str(name), "value": str(value)} for name, value in cookies.items()]
         if not normalized:
             for cookie in cookies:
                 if isinstance(cookie, Mapping):

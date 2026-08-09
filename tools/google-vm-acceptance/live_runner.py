@@ -14,7 +14,7 @@ import pathlib
 import re
 import time
 from typing import Any, Iterable
-from urllib.parse import urlsplit
+from urllib.parse import parse_qsl, urlsplit
 
 import yatouv8
 
@@ -150,6 +150,28 @@ def sg_ss_consumed(response: Any, cookies: Any, *, hostname: str) -> bool:
     return any(re.match(r"\s*SG_SS=0(?:;|$)", line, re.IGNORECASE) for line in set_cookie_lines(response))
 
 
+def valid_navigation(navigation: Any, *, source_url: str) -> bool:
+    """Require location.replace to preserve the redirected challenge entrypoint."""
+
+    if not (
+        isinstance(navigation, dict)
+        and navigation.get("kind") == "replace"
+        and navigation.get("from") == source_url
+        and isinstance(navigation.get("url"), str)
+    ):
+        return False
+    source = urlsplit(source_url)
+    destination = urlsplit(navigation["url"])
+    source_query = dict(parse_qsl(source.query, keep_blank_values=True))
+    destination_query = dict(parse_qsl(destination.query, keep_blank_values=True))
+    return bool(
+        (destination.scheme, destination.netloc, destination.path)
+        == (source.scheme, source.netloc, source.path)
+        and all(destination_query.get(key) == value for key, value in source_query.items())
+        and destination_query.get("sei")
+    )
+
+
 def redacted_token(cookie: dict[str, Any] | None) -> dict[str, Any] | None:
     """Persist token lineage while keeping the actual challenge token secret."""
 
@@ -268,7 +290,7 @@ def run_attempt(
         request_start_ms = time.time_ns() / 1_000_000
         first = session.get(
             target,
-            headers=browser_headers(referer=home_url),
+            headers=browser_headers(referer=str(home.url)),
             timeout=timeout,
             allow_redirects=True,
         )
@@ -298,10 +320,9 @@ def run_attempt(
             "challenge_scripts_complete": vm["executed_script_count"] == 4 and not vm["errors"],
             "knitsail_initialized": vm["state"].get("knitsail") == "object",
             "sg_ss_generated": bool(token and str(token.get("value", "")).startswith("*")),
-            "same_entrypoint_navigation_with_sei": bool(
-                navigation
-                and navigation.get("kind") == "replace"
-                and "sei=" in str(navigation.get("url", ""))
+            "same_entrypoint_navigation_with_sei": valid_navigation(
+                navigation,
+                source_url=str(first.url),
             ),
             "second_hop_200": bool(second_markers and second_markers["status"] == 200),
             "second_hop_not_sorry": bool(second_markers and not second_markers["sorry"]),
