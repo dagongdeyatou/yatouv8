@@ -51,7 +51,7 @@ fn main() {
     assert!(result.ok, "JavaScript exception: {result:?}");
     let value: Value =
         serde_json::from_str(result.json.as_deref().expect("JSON result")).expect("decode result");
-    assert_eq!(value["globalCount"], 981);
+    assert_eq!(value["globalCount"], 1_233);
     assert_eq!(value["internals"], json!([]));
     assert_eq!(
         value["brands"],
@@ -60,11 +60,11 @@ fn main() {
             "[object Screen]",
             "[object Location]",
             "[object Performance]",
-            "[object Document]"
+            "[object HTMLDocument]"
         ])
     );
-    assert_eq!(value["navigatorKeyCount"], 37);
-    assert_eq!(value["navigatorDescriptorCount"], 37);
+    assert_eq!(value["navigatorKeyCount"], 85);
+    assert_eq!(value["navigatorDescriptorCount"], 85);
     assert_eq!(value["navigatorPrototype"], true);
     assert_eq!(value["hasWebdriver"], true);
     assert_eq!(value["clockRepeated"], true);

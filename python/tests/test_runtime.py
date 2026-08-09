@@ -4,6 +4,7 @@ import concurrent.futures
 from collections.abc import Iterator, Mapping
 import datetime
 from enum import Enum
+import json
 import time
 import unittest
 
@@ -543,6 +544,7 @@ class RuntimeTests(unittest.TestCase):
                             image.constructor.name,
                             image.src,
                             image.alt,
+                            image.title,
                         ],
                         div: [
                             Object.prototype.toString.call(div),
@@ -559,7 +561,7 @@ class RuntimeTests(unittest.TestCase):
         self.assertEqual(result["dimensions"], [1280, 633, 1280, 720, 1920, 1080])
         self.assertEqual(
             result["image"],
-            ["[object HTMLImageElement]", "HTMLImageElement", "", ""],
+            ["[object HTMLImageElement]", "HTMLImageElement", "", "", ""],
         )
         self.assertEqual(result["div"], ["[object HTMLDivElement]", "HTMLDivElement", ""])
 
@@ -585,6 +587,19 @@ class RuntimeTests(unittest.TestCase):
                         chromeKeys: Reflect.ownKeys(chrome),
                         chromeRuntime: typeof chrome.runtime,
                         userAgentData: typeof navigator.userAgentData,
+                        callablePrototypes: [
+                            Object.prototype.hasOwnProperty.call(NodeFilter, "prototype"),
+                            Object.prototype.hasOwnProperty.call(atob, "prototype"),
+                            Object.prototype.hasOwnProperty.call(
+                                Object.getOwnPropertyDescriptor(window, "history").get,
+                                "prototype",
+                            ),
+                            Object.prototype.hasOwnProperty.call(
+                                Object.getOwnPropertyDescriptor(window, "trustedTypes").get,
+                                "prototype",
+                            ),
+                            Object.prototype.hasOwnProperty.call(Navigator, "prototype"),
+                        ],
                         navigatorOwnKeys: Reflect.ownKeys(navigator),
                         screenOwnKeys: Reflect.ownKeys(screen),
                         pluginTag: Object.prototype.toString.call(navigator.plugins),
@@ -604,6 +619,15 @@ class RuntimeTests(unittest.TestCase):
                             navigator.connection.rtt,
                             navigator.connection.downlink,
                             navigator.connection.saveData,
+                        ],
+                        deprecatedStorage: [
+                            navigator.webkitTemporaryStorage === navigator.webkitPersistentStorage,
+                            Object.prototype.toString.call(navigator.webkitTemporaryStorage),
+                            navigator.webkitTemporaryStorage.constructor.name,
+                            Reflect.ownKeys(Object.getPrototypeOf(navigator.webkitTemporaryStorage)).map(String),
+                            Function.prototype.toString.call(
+                                navigator.webkitTemporaryStorage.queryUsageAndQuota,
+                            ),
                         ],
                         orientationTag: Object.prototype.toString.call(screen.orientation),
                         orientation: [screen.orientation.type, screen.orientation.angle],
@@ -636,7 +660,8 @@ class RuntimeTests(unittest.TestCase):
             )
             self.assertEqual(result["chromeKeys"], ["loadTimes", "csi", "app"])
             self.assertEqual(result["chromeRuntime"], "undefined")
-            self.assertEqual(result["userAgentData"], "undefined")
+            self.assertEqual(result["userAgentData"], "object")
+            self.assertEqual(result["callablePrototypes"], [False, False, False, False, True])
             self.assertEqual(result["navigatorOwnKeys"], [])
             self.assertEqual(result["screenOwnKeys"], [])
             self.assertEqual(result["pluginTag"], "[object PluginArray]")
@@ -652,6 +677,16 @@ class RuntimeTests(unittest.TestCase):
             self.assertEqual(result["permissionsTag"], "[object Permissions]")
             self.assertEqual(result["connectionTag"], "[object NetworkInformation]")
             self.assertEqual(result["connection"], ["4g", 150, 1.75, False])
+            self.assertEqual(
+                result["deprecatedStorage"],
+                [
+                    True,
+                    "[object DeprecatedStorageQuota]",
+                    "Object",
+                    ["queryUsageAndQuota", "requestQuota", "Symbol(Symbol.toStringTag)"],
+                    "function queryUsageAndQuota() { [native code] }",
+                ],
+            )
             self.assertEqual(result["orientationTag"], "[object ScreenOrientation]")
             self.assertEqual(result["orientation"], ["landscape-primary", 0])
             self.assertTrue(result["hasFocus"])
@@ -914,7 +949,9 @@ class RuntimeTests(unittest.TestCase):
             self.assertEqual(runtime.eval("concurrentCounter"), 32)
 
     def test_generated_chrome_surface_is_installed_without_internal_leaks(self) -> None:
-        with yatouv8.Runtime() as runtime:
+        with yatouv8.Runtime(
+            yatouv8.RuntimeConfig(url="https://www.google.com.hk/search?q=yatouv8")
+        ) as runtime:
             result = runtime.eval(
                 """
                 (() => {
@@ -936,9 +973,9 @@ class RuntimeTests(unittest.TestCase):
                 })()
                 """
             )
-            self.assertEqual(result["count"], 981)
+            self.assertEqual(result["count"], 1233)
             self.assertEqual(result["internals"], [])
-            self.assertEqual(result["navigatorKeys"], 37)
+            self.assertEqual(result["navigatorKeys"], 85)
             self.assertEqual(
                 result["brands"],
                 [
@@ -946,11 +983,395 @@ class RuntimeTests(unittest.TestCase):
                     "[object Screen]",
                     "[object Location]",
                     "[object Performance]",
-                    "[object Document]",
+                    "[object HTMLDocument]",
                 ],
             )
             self.assertTrue(result["nativeNode"])
             self.assertTrue(result["nativeAppend"])
+
+    def test_chrome150_node_constants_have_exact_values_and_descriptors(self) -> None:
+        expected = {
+            "ELEMENT_NODE": 1,
+            "ATTRIBUTE_NODE": 2,
+            "TEXT_NODE": 3,
+            "CDATA_SECTION_NODE": 4,
+            "ENTITY_REFERENCE_NODE": 5,
+            "ENTITY_NODE": 6,
+            "PROCESSING_INSTRUCTION_NODE": 7,
+            "COMMENT_NODE": 8,
+            "DOCUMENT_NODE": 9,
+            "DOCUMENT_TYPE_NODE": 10,
+            "DOCUMENT_FRAGMENT_NODE": 11,
+            "NOTATION_NODE": 12,
+            "DOCUMENT_POSITION_DISCONNECTED": 1,
+            "DOCUMENT_POSITION_PRECEDING": 2,
+            "DOCUMENT_POSITION_FOLLOWING": 4,
+            "DOCUMENT_POSITION_CONTAINS": 8,
+            "DOCUMENT_POSITION_CONTAINED_BY": 16,
+            "DOCUMENT_POSITION_IMPLEMENTATION_SPECIFIC": 32,
+        }
+        with yatouv8.Runtime() as runtime:
+            observed = runtime.eval(
+                """
+                (() => {
+                    const names = Object.keys(%s);
+                    const inspect = owner => Object.fromEntries(names.map(name => {
+                        const descriptor = Object.getOwnPropertyDescriptor(owner, name);
+                        return [name, {
+                            value: owner[name],
+                            writable: descriptor.writable,
+                            enumerable: descriptor.enumerable,
+                            configurable: descriptor.configurable,
+                        }];
+                    }));
+                    return {
+                        static: inspect(Node),
+                        prototype: inspect(Node.prototype),
+                        inherited: Object.fromEntries(names.map(name => [name, document[name]])),
+                    };
+                })()
+                """
+                % json.dumps(expected)
+            )
+
+        exact_descriptor = {
+            name: {
+                "value": value,
+                "writable": False,
+                "enumerable": True,
+                "configurable": False,
+            }
+            for name, value in expected.items()
+        }
+        self.assertEqual(observed["static"], exact_descriptor)
+        self.assertEqual(observed["prototype"], exact_descriptor)
+        self.assertEqual(observed["inherited"], expected)
+
+    def test_recorded_clock_preserves_chrome_f64_exactly(self) -> None:
+        # This Chrome timer value sits on a decimal-to-binary rounding boundary.
+        # Losing one ULP here is sufficient to change BotGuard's sampled index.
+        chrome_value = 91.59999990463257
+        profile = yatouv8.BrowserProfile(
+            clock={
+                "mode": "recorded",
+                "buckets": [{"value_ms": chrome_value, "repeat": 2}],
+                "fallback_quantum_ms": 0.1,
+                "fallback_repeats": 1,
+            }
+        )
+        with yatouv8.Runtime(yatouv8.RuntimeConfig(profile=profile)) as runtime:
+            first = runtime.eval("performance.now()")
+            second = runtime.eval("performance.now()")
+
+        self.assertEqual(first, chrome_value)
+        self.assertEqual(second, chrome_value)
+        self.assertEqual(first.hex(), chrome_value.hex())
+
+    def test_navigator_webdriver_getter_enforces_webidl_brand(self) -> None:
+        with yatouv8.Runtime(yatouv8.RuntimeConfig()) as runtime:
+            observed = runtime.eval(
+                """
+                (() => {
+                    const getter = Object.getOwnPropertyDescriptor(
+                        Navigator.prototype,
+                        "webdriver",
+                    ).get;
+                    const invoke = receiver => {
+                        try {
+                            return {ok: true, value: getter.call(receiver)};
+                        } catch (error) {
+                            return {ok: false, name: error.name, message: error.message};
+                        }
+                    };
+                    return {
+                        navigator: invoke(navigator),
+                        window: invoke(window),
+                        inheritedOnly: invoke(Object.create(Navigator.prototype)),
+                    };
+                })()
+                """
+            )
+
+        self.assertEqual(observed["navigator"], {"ok": True, "value": False})
+        self.assertEqual(
+            observed["window"],
+            {"ok": False, "name": "TypeError", "message": "Illegal invocation"},
+        )
+        self.assertEqual(
+            observed["inheritedOnly"],
+            {"ok": False, "name": "TypeError", "message": "Illegal invocation"},
+        )
+
+    def test_get_trace_preserves_nested_native_function_to_string(self) -> None:
+        config = yatouv8.RuntimeConfig(
+            get_trace=yatouv8.GetTraceConfig(enabled=True, max_events=1_000)
+        )
+        with yatouv8.Runtime(config) as runtime:
+            observed = runtime.eval(
+                """
+                (() => {
+                    const element = document.createElement('div');
+                    return Object.fromEntries([
+                        ['pseudo', element.pseudo],
+                        ['when', element.when],
+                        ['removeChild', element.removeChild],
+                    ].map(([key, value]) => [key, {
+                        name: value.name,
+                        source: Function.prototype.toString.call(value),
+                    }]));
+                })()
+                """
+            )
+
+        self.assertEqual(
+            observed,
+            {
+                name: {"name": name, "source": f"function {name}() {{ [native code] }}"}
+                for name in ("pseudo", "when", "removeChild")
+            },
+        )
+
+    def test_iframe_creates_chrome_window_index_and_length(self) -> None:
+        config = yatouv8.RuntimeConfig(
+            get_trace=yatouv8.GetTraceConfig(enabled=True, max_events=5_000)
+        )
+        with yatouv8.Runtime(config) as runtime:
+            observed = runtime.eval(
+                """
+                (() => {
+                    const iframe = document.createElement('iframe');
+                    document.body.appendChild(iframe);
+                    const descriptor = Object.getOwnPropertyDescriptor(window, '0');
+                    const beforeRemoval = {
+                        length: window.length,
+                        firstKey: Object.getOwnPropertyNames(window)[0],
+                        tag: Object.prototype.toString.call(window[0]),
+                        sameWindow: iframe.contentWindow === window[0],
+                        domain: document.domain,
+                        childDomain: iframe.contentWindow.document.domain,
+                        independentDocument:
+                            iframe.contentDocument !== document &&
+                            iframe.contentWindow.document === iframe.contentDocument,
+                        independentLocation:
+                            iframe.contentWindow.location !== location &&
+                            iframe.contentDocument.location === iframe.contentWindow.location,
+                        childHref: iframe.contentWindow.location.href,
+                        childURL: iframe.contentDocument.URL,
+                        childBaseURI: iframe.contentDocument.baseURI,
+                        childReferrer: iframe.contentDocument.referrer,
+                        frameElement: iframe.contentWindow.frameElement === iframe,
+                        descriptor: {
+                            writable: descriptor.writable,
+                            enumerable: descriptor.enumerable,
+                            configurable: descriptor.configurable,
+                        },
+                    };
+                    iframe.remove();
+                    return {
+                        beforeRemoval,
+                        afterRemoval: {
+                            length: window.length,
+                            zero: typeof window[0],
+                            hasZero: Object.getOwnPropertyNames(window).includes('0'),
+                        },
+                    };
+                })()
+                """
+            )
+
+        self.assertEqual(
+            observed,
+            {
+                "beforeRemoval": {
+                    "length": 1,
+                    "firstKey": "0",
+                    "tag": "[object Window]",
+                    "sameWindow": True,
+                    "domain": "fixture.invalid",
+                    "childDomain": "fixture.invalid",
+                    "independentDocument": True,
+                    "independentLocation": True,
+                    "childHref": "about:blank",
+                    "childURL": "about:blank",
+                    "childBaseURI": "https://fixture.invalid/",
+                    "childReferrer": "https://fixture.invalid/",
+                    "frameElement": True,
+                    "descriptor": {
+                        "writable": False,
+                        "enumerable": True,
+                        "configurable": True,
+                    },
+                },
+                "afterRemoval": {
+                    "length": 0,
+                    "zero": "undefined",
+                    "hasZero": False,
+                },
+            },
+        )
+
+    def test_text_html_document_uses_html_document_brand(self) -> None:
+        with yatouv8.Runtime() as runtime:
+            observed = runtime.eval(
+                """
+                (() => ({
+                    tag: Object.prototype.toString.call(document),
+                    constructor: document.constructor.name,
+                    htmlPrototype: Object.getPrototypeOf(document) === HTMLDocument.prototype,
+                    documentPrototype:
+                        Object.getPrototypeOf(HTMLDocument.prototype) === Document.prototype,
+                }))()
+                """
+            )
+
+        self.assertEqual(
+            observed,
+            {
+                "tag": "[object HTMLDocument]",
+                "constructor": "HTMLDocument",
+                "htmlPrototype": True,
+                "documentPrototype": True,
+            },
+        )
+
+    def test_document_exposes_chrome_unforgeable_location_and_serialized_base_uri(
+        self,
+    ) -> None:
+        config = yatouv8.RuntimeConfig(
+            url="https://www.google.com.hk/search?q=%E4%BA%9A%E9%9D%9E"
+        )
+        with yatouv8.Runtime(config) as runtime:
+            observed = runtime.eval(
+                """
+                (() => {
+                    const descriptor = Object.getOwnPropertyDescriptor(
+                        document, 'location'
+                    );
+                    return {
+                        sameLocation: document.location === globalThis.location,
+                        ownNames: Object.getOwnPropertyNames(document),
+                        href: document.location.href,
+                        baseURI: document.baseURI,
+                        descriptor: {
+                            enumerable: descriptor.enumerable,
+                            configurable: descriptor.configurable,
+                            get: [descriptor.get.name, descriptor.get.length,
+                                Function.prototype.toString.call(descriptor.get)],
+                            set: [descriptor.set.name, descriptor.set.length,
+                                Function.prototype.toString.call(descriptor.set)],
+                        },
+                    };
+                })()
+                """
+            )
+
+        self.assertEqual(
+            observed,
+            {
+                "sameLocation": True,
+                "ownNames": ["location"],
+                "href": "https://www.google.com.hk/search?q=%E4%BA%9A%E9%9D%9E",
+                "baseURI": "https://www.google.com.hk/search?q=%E4%BA%9A%E9%9D%9E",
+                "descriptor": {
+                    "enumerable": True,
+                    "configurable": False,
+                    "get": [
+                        "get location", 0,
+                        "function get location() { [native code] }",
+                    ],
+                    "set": [
+                        "set location", 1,
+                        "function set location() { [native code] }",
+                    ],
+                },
+            },
+        )
+
+    def test_location_matches_chrome_unforgeable_shape_and_url_serialization(self) -> None:
+        config = yatouv8.RuntimeConfig(
+            url="https://www.google.com.hk/search?q=亚非"
+        )
+        with yatouv8.Runtime(config) as runtime:
+            observed = runtime.eval(
+                """
+                (() => {
+                    const descriptor = key => {
+                        const value = Object.getOwnPropertyDescriptor(location, key);
+                        return {
+                            writable: value.writable,
+                            enumerable: value.enumerable,
+                            configurable: value.configurable,
+                            get: value.get && [value.get.name, value.get.length,
+                                Function.prototype.toString.call(value.get)],
+                            set: value.set && [value.set.name, value.set.length,
+                                Function.prototype.toString.call(value.set)],
+                            fn: typeof value.value === 'function' && [
+                                value.value.name, value.value.length,
+                                Function.prototype.toString.call(value.value),
+                            ],
+                        };
+                    };
+                    return {
+                        href: location.href,
+                        string: String(location),
+                        names: Object.getOwnPropertyNames(location),
+                        hrefDescriptor: descriptor('href'),
+                        assignDescriptor: descriptor('assign'),
+                        ancestor: {
+                            tag: Object.prototype.toString.call(location.ancestorOrigins),
+                            length: location.ancestorOrigins.length,
+                            item: location.ancestorOrigins.item(0),
+                        },
+                        illegalInvocation: (() => {
+                            try {
+                                location.toString.call({});
+                                return null;
+                            } catch (error) {
+                                return [error.name, error.message];
+                            }
+                        })(),
+                    };
+                })()
+                """
+            )
+
+        self.assertEqual(observed["href"],
+                         "https://www.google.com.hk/search?q=%E4%BA%9A%E9%9D%9E")
+        self.assertEqual(observed["string"], observed["href"])
+        self.assertEqual(
+            observed["names"],
+            [
+                "valueOf", "ancestorOrigins", "href", "origin", "protocol",
+                "host", "hostname", "port", "pathname", "search", "hash",
+                "assign", "reload", "replace", "toString",
+            ],
+        )
+        self.assertEqual(
+            observed["hrefDescriptor"],
+            {
+                "enumerable": True,
+                "configurable": False,
+                "get": ["get href", 0, "function get href() { [native code] }"],
+                "set": ["set href", 1, "function set href() { [native code] }"],
+                "fn": False,
+            },
+        )
+        self.assertEqual(
+            observed["assignDescriptor"],
+            {
+                "writable": False,
+                "enumerable": True,
+                "configurable": False,
+                "fn": ["assign", 1, "function assign() { [native code] }"],
+            },
+        )
+        self.assertEqual(
+            observed["ancestor"],
+            {"tag": "[object DOMStringList]", "length": 0, "item": None},
+        )
+        self.assertEqual(
+            observed["illegalInvocation"], ["TypeError", "Illegal invocation"]
+        )
 
     def test_reflection_trace_records_structure_operations(self) -> None:
         config = yatouv8.RuntimeConfig(
@@ -979,6 +1400,31 @@ class RuntimeTests(unittest.TestCase):
                 }.issubset(operations)
             )
             self.assertEqual(runtime.get_trace_stats["dropped"], 0)
+
+    def test_reflection_tracing_preserves_intrinsic_instance_key_order(self) -> None:
+        for enabled in (False, True):
+            config = yatouv8.RuntimeConfig(
+                get_trace=yatouv8.GetTraceConfig(
+                    enabled=enabled, max_events=1_000
+                )
+            )
+            with yatouv8.Runtime(config) as runtime:
+                observed = runtime.eval(
+                    """
+                    ({
+                        array: Reflect.ownKeys([1, 2]).map(String),
+                        regexp: Object.getOwnPropertyNames(/probe/),
+                    })
+                    """
+                )
+
+            self.assertEqual(
+                observed,
+                {
+                    "array": ["0", "1", "length"],
+                    "regexp": ["lastIndex"],
+                },
+            )
 
     def test_trace_names_intrinsic_namespaces_instead_of_object_prototype(self) -> None:
         config = yatouv8.RuntimeConfig(

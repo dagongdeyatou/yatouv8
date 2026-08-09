@@ -18,6 +18,7 @@ __pycache__/
 /.yatou/evidence/
 /.yatou/tmp/
 /.yatou/m10-tmp-*/
+/.yatou/dist*/
 /.reference-cache/
 
 # V8 / cargo build caches

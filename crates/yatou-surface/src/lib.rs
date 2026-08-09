@@ -277,11 +277,11 @@ mod tests {
     fn generated_surface_has_expected_baseline_shape() {
         assert_eq!(
             GENERATED_BASELINE_ID,
-            "win11-chrome150.0.7871.188-headful-m2-v3-full"
+            "win11-chrome150.0.7871.129-headful-secure-m2-v1"
         );
-        assert_eq!(GENERATED_INTERFACES.len(), 1_469);
-        assert_eq!(GENERATED_MEMBERS.len(), 12_841);
+        assert_eq!(GENERATED_INTERFACES.len(), 1_935);
+        assert_eq!(GENERATED_MEMBERS.len(), 15_473);
         assert_eq!(GENERATED_INTERFACES[0].path, "globalThis");
-        assert_eq!(GENERATED_INTERFACES[0].member_len, 981);
+        assert_eq!(GENERATED_INTERFACES[0].member_len, 1_233);
     }
 }

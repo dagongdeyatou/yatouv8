@@ -677,10 +677,21 @@ fn add_event_listener_callback(
 
 #[allow(clippy::needless_pass_by_value)]
 fn performance_now_callback(
-    _scope: &mut v8::PinScope,
-    _args: v8::FunctionCallbackArguments,
+    scope: &mut v8::PinScope,
+    args: v8::FunctionCallbackArguments,
     mut retval: v8::ReturnValue,
 ) {
+    // Chrome exposes Performance.prototype.now as a non-constructible Web IDL
+    // operation and rejects every receiver except its Performance instance.
+    // Keeping this check in the native callback also prevents a JavaScript
+    // forwarding wrapper from becoming observable through constructor errors.
+    if !args.this().strict_equals(args.data()) {
+        if let Some(message) = v8::String::new(scope, "Illegal invocation") {
+            let exception = v8::Exception::type_error(scope, message);
+            scope.throw_exception(exception);
+        }
+        return;
+    }
     let value = CALLBACK_STATE.with(|state| {
         let mut state = state.borrow_mut();
         if let Some(started) = state.clock_system_started {
@@ -914,7 +925,10 @@ fn install_native_functions(
     set_function(scope, global, "addEventListener", add_event_listener)?;
 
     let performance = v8::Object::new(scope);
-    let now = v8::Function::new(scope, performance_now_callback)
+    let now = v8::Function::builder(performance_now_callback)
+        .data(performance.into())
+        .constructor_behavior(v8::ConstructorBehavior::Throw)
+        .build(scope)
         .ok_or(V8Error::NativeInstallation("performance.now"))?;
     set_function(scope, performance, "now", now)?;
     let key = v8::String::new(scope, "performance").ok_or(V8Error::SourceAllocation)?;
