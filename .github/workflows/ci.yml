@@ -26,6 +26,10 @@ jobs:
   windows-v8-wheel:
     runs-on: windows-2025
     timeout-minutes: 90
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.10", "3.13"]
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@1.97.1
@@ -33,12 +37,14 @@ jobs:
           components: rustfmt, clippy
       - uses: actions/setup-python@v5
         with:
-          python-version: "3.13"
+          python-version: ${{ matrix.python-version }}
       - run: python -m pip install maturin==1.14.1 websocket-client==1.9.0
       - shell: pwsh
-        run: ./scripts/build-wheel.ps1
+        run: |
+          $python = (Get-Command python.exe).Source
+          ./scripts/build-wheel.ps1 -PythonExecutable $python -MaturinPythonExecutable $python
       - uses: actions/upload-artifact@v4
         with:
-          name: yatouv8-win-amd64-cp313
+          name: yatouv8-win-amd64-py${{ matrix.python-version }}
           path: dist/*.whl
           if-no-files-found: error

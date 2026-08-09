@@ -144,7 +144,14 @@ class HttpNavigationTiming:
             for key, value in dict(getattr(response, "infos", {}) or {}).items()
         }
         elapsed = getattr(response, "elapsed", None)
-        fallback_seconds = float(elapsed.total_seconds()) if elapsed is not None else 0.0
+        if elapsed is None:
+            fallback_seconds = 0.0
+        elif hasattr(elapsed, "total_seconds"):
+            fallback_seconds = float(elapsed.total_seconds())
+        else:
+            # curl_cffi <= 0.13 exposes elapsed as seconds in a float;
+            # newer releases use datetime.timedelta.
+            fallback_seconds = float(elapsed)
 
         def milliseconds(name: str, fallback: float = 0.0) -> float:
             value = infos.get(name, fallback)

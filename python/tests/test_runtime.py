@@ -108,6 +108,19 @@ class RuntimeTests(unittest.TestCase):
         self.assertEqual(navigation["transferSize"], 128)
         self.assertEqual(navigation["decodedBodySize"], 12)
 
+    def test_curl_response_accepts_legacy_float_elapsed(self) -> None:
+        class Response:
+            elapsed = 0.421
+            infos = {}
+
+        timing = yatouv8.HttpNavigationTiming.from_curl_response(
+            Response(),
+            navigation_start_ms=1_786_210_000_000.25,
+        )
+
+        self.assertEqual(timing.response_start_ms, 421.0)
+        self.assertEqual(timing.response_end_ms, 421.0)
+
     def test_execution_trace_captures_nested_eval_source_and_missed_branch(self) -> None:
         config = yatouv8.RuntimeConfig(
             execution_trace=yatouv8.ExecutionTraceConfig(

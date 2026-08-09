@@ -31,10 +31,11 @@
 
 ## Python API
 
-构建并验证可移植的 CPython 3.13 Windows wheel：
+构建并验证 CPython 3.10 或 3.13 Windows wheel：
 
 ```powershell
 .\scripts\build-wheel.ps1
+.\scripts\build-wheel.ps1 -PythonExecutable "D:\language\python-3.10.1\python.exe"
 ```
 
 使用正式的 persistent runtime：
@@ -169,7 +170,7 @@ py -3.13 tools\google-vm-acceptance\live_runner.py `
 - Windows 11 x64
 - Visual Studio 2022 C++ toolchain
 - Windows SDK 10.0.26100.0 或兼容版本
-- Python 3.13+
+- Python 3.10+
 - Rust 1.97.1
 
 从源码构建并执行 V8 150：
