@@ -1,7 +1,8 @@
 [CmdletBinding()]
 param(
     [ValidateSet('debug', 'release')]
-    [string]$Profile = 'debug'
+    [string]$Profile = 'debug',
+    [string]$Target = ''
 )
 
 $ErrorActionPreference = 'Stop'
@@ -12,6 +13,7 @@ if (!(Test-Path -LiteralPath $cargo)) {
 }
 
 $pythonCandidates = @(
+    $env:PYTHON,
     'C:\ProgramData\anaconda3\python.exe',
     (Get-Command python -ErrorAction SilentlyContinue | Select-Object -ExpandProperty Source -First 1)
 ) | Where-Object { $_ -and (Test-Path -LiteralPath $_) }
@@ -92,6 +94,42 @@ function Install-PinnedLibClang {
     return (Split-Path -Parent $libClang)
 }
 
+function Import-VisualStudioEnvironment {
+    param([Parameter(Mandatory)] [ValidateSet('amd64', 'arm64')] [string]$Architecture)
+
+    $vswhere = Join-Path ${env:ProgramFiles(x86)} 'Microsoft Visual Studio\Installer\vswhere.exe'
+    if (!(Test-Path -LiteralPath $vswhere)) {
+        throw "Visual Studio locator not found: $vswhere"
+    }
+    $vswhereArguments = @(
+        '-latest', '-products', '*', '-requires',
+        'Microsoft.VisualStudio.Component.VC.Tools.x86.x64'
+    )
+    if ($Architecture -eq 'arm64') {
+        $vswhereArguments += 'Microsoft.VisualStudio.Component.VC.Tools.ARM64'
+    }
+    $vswhereArguments += @('-property', 'installationPath')
+    $installation = (& $vswhere @vswhereArguments | Select-Object -First 1)
+    if (!$installation) {
+        throw "Visual Studio C++ build tools for $Architecture were not found"
+    }
+    $vsDevCmd = Join-Path $installation 'Common7\Tools\VsDevCmd.bat'
+    if (!(Test-Path -LiteralPath $vsDevCmd)) {
+        throw "VsDevCmd.bat not found: $vsDevCmd"
+    }
+
+    $batch = "call `"$vsDevCmd`" -no_logo -arch=$Architecture -host_arch=amd64 >nul && set"
+    $environment = & $env:ComSpec /d /s /c $batch
+    if ($LASTEXITCODE -ne 0) {
+        throw "Failed to initialize Visual Studio for $Architecture"
+    }
+    foreach ($line in $environment) {
+        if ($line -match '^([^=]+)=(.*)$') {
+            [Environment]::SetEnvironmentVariable($Matches[1], $Matches[2], 'Process')
+        }
+    }
+}
+
 $gn = Install-PinnedBuildTool `
     -Name 'gn' `
     -Url 'https://chrome-infra-packages.appspot.com/dl/gn/gn/windows-amd64/+/git_revision:3357c4f51b1a9e676378c695dd9c7e9911c35ee6' `
@@ -105,6 +143,32 @@ $ninja = Install-PinnedBuildTool `
     -Executable 'ninja.exe'
 
 $libClangPath = Install-PinnedLibClang
+
+$rustc = Join-Path (Split-Path -Parent $cargo) 'rustc.exe'
+if (!(Test-Path -LiteralPath $rustc)) {
+    throw "rustc not found next to cargo: $rustc"
+}
+$rustcVersion = (& $rustc -vV) -join "`n"
+if ($LASTEXITCODE -ne 0 -or $rustcVersion -notmatch '(?m)^host:\s*(\S+)\s*$') {
+    throw 'Unable to determine the Rust host target'
+}
+$hostTarget = $Matches[1]
+$effectiveTarget = if ($Target) { $Target } else { $hostTarget }
+$isCross = $effectiveTarget -ne $hostTarget
+$msvcArchitecture = switch -Regex ($effectiveTarget) {
+    '^aarch64-pc-windows-msvc$' { 'arm64'; break }
+    '^x86_64-pc-windows-msvc$' { 'amd64'; break }
+    default { throw "Unsupported Windows V8 target: $effectiveTarget" }
+}
+Import-VisualStudioEnvironment -Architecture $msvcArchitecture
+
+if ($Target) {
+    & (Join-Path (Split-Path -Parent $cargo) 'rustup.exe') target add `
+        --toolchain '1.97.1' $Target | Out-Host
+    if ($LASTEXITCODE -ne 0) {
+        throw "Failed to install Rust target $Target"
+    }
+}
 
 $preparationManifest = Join-Path $env:TEMP 'yatouv8-v8-source-preparation.json'
 & $pythonCandidates[0] tools\build\prepare_v8_source.py `
@@ -130,7 +194,21 @@ if (!$env:RUSTFLAGS -or !$env:RUSTFLAGS.Contains($crtStaticFlag)) {
 $env:GN = $gn
 $env:NINJA = $ninja
 $env:LIBCLANG_PATH = $libClangPath
-$clangResourceInclude = Join-Path (Resolve-Path '.').Path "target\$Profile\clang\lib\clang\23\include"
+# Chromium GN emits long relative dependency paths for its Rust sysroot.  A
+# normal checkout-local Cargo target directory can exceed Win32's 260-character
+# path limit before the `..` components are normalized, even when the final
+# absolute path is shorter.  Keep the Windows V8/Cargo output root deliberately
+# short; callers can override it when their build volume has another short path.
+if (!$env:CARGO_TARGET_DIR) {
+    $env:CARGO_TARGET_DIR = Join-Path $env:SystemDrive 'y8t'
+}
+New-Item -ItemType Directory -Force -Path $env:CARGO_TARGET_DIR | Out-Null
+$targetProfileRoot = if ($Target) {
+    Join-Path $env:CARGO_TARGET_DIR "$Target\$Profile"
+} else {
+    Join-Path $env:CARGO_TARGET_DIR $Profile
+}
+$clangResourceInclude = Join-Path $targetProfileRoot 'clang\lib\clang\23\include'
 $resourceIncludeArg = "-isystem`"$clangResourceInclude`""
 $env:BINDGEN_EXTRA_CLANG_ARGS = if ($env:BINDGEN_EXTRA_CLANG_ARGS) {
     "$resourceIncludeArg $env:BINDGEN_EXTRA_CLANG_ARGS"
@@ -142,7 +220,7 @@ if (!$env:NUM_JOBS) {
 }
 
 $arguments = @(
-    'run',
+    $(if ($isCross) { 'build' } else { 'run' }),
     '-p', 'yatou-core',
     '--example', 'v8_smoke',
     '--features', 'v8-runtime',
@@ -152,13 +230,18 @@ $arguments = @(
 if ($Profile -eq 'release') {
     $arguments += '--release'
 }
+if ($Target) {
+    $arguments += @('--target', $Target)
+}
 
-Write-Host "Building V8 150.4.0 from source with PYTHON=$env:PYTHON"
+Write-Host "Building V8 150.4.0 from source for TARGET=$effectiveTarget (HOST=$hostTarget)"
+Write-Host "PYTHON=$env:PYTHON"
 Write-Host "PYTHONUTF8=$env:PYTHONUTF8"
 Write-Host "RUSTFLAGS=$env:RUSTFLAGS"
 Write-Host "GN=$env:GN"
 Write-Host "NINJA=$env:NINJA"
 Write-Host "LIBCLANG_PATH=$env:LIBCLANG_PATH"
+Write-Host "CARGO_TARGET_DIR=$env:CARGO_TARGET_DIR"
 Write-Host "BINDGEN_EXTRA_CLANG_ARGS=$env:BINDGEN_EXTRA_CLANG_ARGS"
 Write-Host "ICU_DATA=$icuData"
 Write-Host "CHROMIUM_RUST=$chromiumRust"
@@ -166,3 +249,11 @@ Write-Host "CHROMIUM_RUST=$chromiumRust"
 if ($LASTEXITCODE -ne 0) {
     exit $LASTEXITCODE
 }
+
+[pscustomobject]@{
+    host_target = $hostTarget
+    target = $effectiveTarget
+    profile = $Profile
+    cross_compiled = $isCross
+    smoke_executed = !$isCross
+} | ConvertTo-Json

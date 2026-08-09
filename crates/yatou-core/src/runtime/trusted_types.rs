@@ -35,8 +35,9 @@ mod code_like {
 
     pub(super) fn set(template: &v8::ObjectTemplate) {
         // SAFETY: rusty_v8::Local<ObjectTemplate> dereferences to the same
-        // v8::ObjectTemplate C++ object linked from rusty_v8.lib. On x64 MSVC,
-        // the C and C++ member-call ABIs both pass the sole pointer in RCX.
+        // v8::ObjectTemplate C++ object linked from rusty_v8.lib. MSVC passes
+        // the sole pointer in RCX on x64 and X0 on ARM64; the decorated symbol
+        // is identical for both target architectures.
         unsafe { object_template_set_code_like(template) };
     }
 }
