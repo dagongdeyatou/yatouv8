@@ -1,56 +1,78 @@
 # yatouv8
 
-> 当前状态：M0–M10 已完成，发布版本 `0.1.0`。已验证一条**公开归档的真实
-> Google reCAPTCHA BotGuard VM** 路径、Chrome 150 的 M8 宿主语义，以及
-> 2026-08-07 当前公开 Google/recaptcha.net loader。当前在线 challenge 与私有
-> BotGuard bytecode 仍不在完成声明内。SG_SS 定向本地门禁已达到 12,841/12,841
-> descriptor、9,565/9,565 callable metadata 和 0 failure；未经纳入 corpus 的
-> 私有 VM 中 `sgs` 初始化不属于该完成声明。当前在线 Google Search challenge 已能
-> 生成 SG_SS，并通过同 Session、新 Session 和无 Session 的模块级
-> `curl_cffi.requests.get` 完整 Cookie 第二跳验收；只传 SG_SS 的负对照仍进入
-> `/sorry/`。
+> **yatouv8** 是一个基于 V8 引擎的高性能 Python 原生扩展。它在原生宿主层实现
+> 可配置的 BOM、DOM、CSSOM、事件循环、时间、存储、Cookie、Fetch 等浏览器 API，
+> 并提供 API 调用链追踪与 V8 Inspector 级执行诊断，使 Python 可以直接运行依赖
+> Web 环境的 JavaScript，**无需启动 Chrome、WebDriver 或其他完整浏览器进程**。
 
-`yatouv8` 是以 Windows 11 + Chrome 150 为浏览器行为基线的证据驱动型 V8
-宿主：先采集 Chrome 行为，再通过差异、因果 blocker、Manifest 和生成器收敛
-兼容层。原生发布工程已经实现 Windows、macOS、manylinux 和 musllinux 的
-x86_64/ARM64 主流矩阵，覆盖 CPython 3.10–3.14 共 40 个 wheel；当前已验收发布
-产物仍以 Windows x64 为准，其余平台等待对应原生 CI 产物完成最终验收。
+`yatouv8` 面向需要“V8 执行能力 + 浏览器宿主环境”的场景。它不是把 JavaScript
+交给外部浏览器执行，而是把 V8 Isolate、持久化 Context 和浏览器兼容层直接嵌入
+Python 进程，在可控环境中执行普通脚本、动态 `eval`、网页 Bundle 和依赖 Web API
+的 JavaScript。
 
 ![yatouv8 总体架构](docs/architecture/yatouv8-overview.png)
 
-## 当前里程碑
+## 核心能力
 
-| 里程碑 | 状态 | 完成条件 |
-| --- | --- | --- |
-| M0 架构合同 | 完成 | 总体图、ADR、Workspace 骨架 |
-| M1 V8 substrate | 完成 | V8 150 源码构建并执行最小 JavaScript |
-| M2 Chrome evidence | 完成 | headful Chrome 150 基线、重复稳定性与 clock distribution 已验证 |
-| M3 Trace spine | 完成 | L0 strict replay、L1 API ledger、NDJSON Schema 与 inspector 已验证 |
-| M4 Diff/ranking | 完成 | typed trace diff、checkpoint diff 与因果 blocker ranking 已验证 |
-| M5 Surface generator | 完成 | 1,469 surfaces / 12,841 descriptors、lineage 与 L1 trampoline 已生成并验证 |
-| M6 首条真实路径 | 完成（归档目标） | Chrome 150 与 yatouv8 的 7/7 BotGuard trace 事件一致，strict replay 全消费 |
-| M7 SDK/runtime | 完成 | owner thread、persistent Context、Python SDK、资源注入、GIL 释放与 wheel 测试 |
-| M8 Host semantics | 完成 | DOM/CSSOM/Event/Timer/Storage/Cookie/Fetch 最小语义；Chrome/yatouv8 probe 哈希一致 |
-| M9 当前公开 corpus | 完成（公开 loader） | google.com 与 recaptcha.net 当前 loader 双侧一致，第二阶段已内容寻址 |
-| M10 发布工程 | 完成 | Windows wheel、CI、SBOM、release audit、性能/并发/恢复和终态证据门禁 |
+| 能力 | 说明 |
+| --- | --- |
+| 原生 V8 执行 | 嵌入 V8 150.4.0，通过 Rust/PyO3 暴露 Python 原生扩展，不启动浏览器 |
+| 持久化运行时 | 每个 `Runtime` 持有独立 Isolate/Context，全局变量、Cookie、Storage 和任务状态可持续存在 |
+| 浏览器环境 | 提供 Window、Document、Navigator、Screen、Location、DOM、CSSOM、EventTarget 等宿主对象 |
+| Web 运行语义 | 支持 Timer、Microtask、Performance、Storage、Cookie、Fetch、Trusted Types 和页面导航状态 |
+| 可控资源模型 | Python 显式注入脚本、JSON、HTML 等资源；离线执行时不会意外回退真实网络 |
+| Chrome 行为基线 | API 类型、原型链、descriptor、枚举顺序和关键返回语义以 Windows 11 + Chrome 150 为基线 |
+| 调用链监控 | 可记录 API `get`、`set`、`call`、反射操作、Cookie、导航和资源访问 |
+| 执行诊断 | 集成 V8 Inspector precise coverage，可定位动态 `eval`、未执行分支和首个环境分叉 |
+| Python SDK | 提供值转换、异常映射、资源注入、任务排空、Cookie 导入导出和 challenge 便捷封装 |
 
-## Python API
+适合用于：
 
-构建并验证 CPython 3.10–3.14 Windows wheel：
+- 在 Python 中执行依赖 `window`、`document`、`navigator` 等对象的 JavaScript；
+- 运行或测试从网页中提取的脚本和 Bundle；
+- 构建可重复的浏览器环境模拟、差分测试和 JavaScript 分析流程；
+- 在不启动完整浏览器的情况下追踪脚本读取了哪些环境属性；
+- 将 HTTP 客户端取得的页面资源交给 V8 执行，再把 Cookie 与导航结果返回 Python。
 
-```powershell
-.\scripts\build-wheel.ps1
-.\scripts\build-wheel.ps1 -PythonExecutable "D:\language\python-3.10.1\python.exe"
-.\scripts\build-wheel.ps1 -TargetId windows-arm64 `
-  -PythonExecutable "D:\language\python-3.10.1\python.exe"
+## 快速开始
+
+### 直接执行 JavaScript
+
+```python
+import yatouv8
+
+with yatouv8.Runtime() as runtime:
+    print(runtime.eval("6 * 7"))
+    print(runtime.eval("navigator.userAgent"))
+    print(runtime.eval("document.createElement('div').tagName"))
 ```
 
-完整发布矩阵为 Windows x64/ARM64、macOS x86_64/ARM64、manylinux glibc
-x86_64/ARM64、musllinux x86_64/ARM64；每个目标均构建 CPython 3.10–3.14。
-入口、固定容器、宿主/目标边界和验收项见
-[跨平台 wheel 构建](docs/building-cross-platform.md)。
+`Runtime` 是持久化环境，同一个实例中的 JavaScript 状态不会在每次 `eval()` 后丢失：
 
-使用正式的 persistent runtime：
+```python
+import yatouv8
+
+with yatouv8.Runtime() as runtime:
+    runtime.eval("globalThis.counter = 1")
+    runtime.eval("counter += 41")
+    assert runtime.eval("counter") == 42
+```
+
+JavaScript 异常会映射为 Python `JSException`，异常不会销毁当前 Context：
+
+```python
+import yatouv8
+
+with yatouv8.Runtime() as runtime:
+    try:
+        runtime.eval("throw new TypeError('invalid value')")
+    except yatouv8.JSException as error:
+        print(error.name, error.message)
+```
+
+### 注入资源并运行异步代码
+
+`fetch()` 默认只访问 Python 显式注册的资源，使脚本执行可重复、可审计：
 
 ```python
 import yatouv8
@@ -61,47 +83,64 @@ with yatouv8.Runtime() as runtime:
         '{"answer": 42}',
         headers={"content-type": "application/json"},
     )
-    print(runtime.eval("6 * 7"))
     runtime.eval(
         "fetch('https://fixture.invalid/data.json')"
-        ".then(r => r.json()).then(v => globalThis.answer = v.answer)"
+        ".then(r => r.json())"
+        ".then(v => globalThis.answer = v.answer)"
     )
-    print(runtime.eval("answer"))
-    print(runtime.trace["footer"])
+    runtime.drain()
+    assert runtime.eval("answer") == 42
 ```
 
-`Runtime`/`Context` 把 V8 Isolate 固定在 owner thread；Python 等待时释放 GIL。
-`fetch` 只读取显式 `add_resource` 内容，缺失 URL 不回退真实网络。
+## 浏览器环境
 
-需要定位 Google VM 的首个环境分叉时，显式开启有界 GET tracing：
+当前宿主环境覆盖以下主要类别：
+
+- **BOM**：`globalThis`、`window`、`navigator`、`screen`、`location`、`history`、
+  `performance`、`crypto`；
+- **DOM**：`document`、Element/Node 接口、属性、事件监听、iframe/window 索引；
+- **CSSOM**：样式声明存储、descriptor、`getComputedStyle()` 固定返回策略；
+- **事件与任务**：EventTarget、Mouse/Pointer/Input 事件、Timer、Microtask、任务排空；
+- **状态**：Cookie、local/session storage、页面导航和资源生命周期；
+- **安全与反射**：Trusted Types、`Object`/`Reflect`/`Function` 关键语义、原生函数外观；
+- **网络边界**：受控 Fetch/Response 和 Python 注入的内容寻址资源。
+
+浏览器 API 的结构面由 Chrome snapshot 和 Surface Manifest 生成，行为面由原生
+handler 实现。新增接口必须经过 Chrome 基线采集、snapshot diff 和 conformance
+测试，而不是简单堆叠手写 JavaScript shim。
+
+## API 调用追踪
+
+需要知道目标脚本读取、写入或调用了哪些浏览器 API 时，可以显式开启有界 GET
+tracing：
 
 ```python
 import yatouv8
 
 config = yatouv8.RuntimeConfig(
-    get_trace=yatouv8.GetTraceConfig(enabled=True, max_events=50_000),
+    get_trace=yatouv8.GetTraceConfig(
+        enabled=True,
+        max_events=50_000,
+    )
 )
+
 with yatouv8.Runtime(config) as runtime:
     runtime.eval("navigator.userAgent; performance.now(); screen.width")
-    gets = [
-        event["entry"]
-        for event in runtime.trace["events"]
-        if event["level"] == "l1" and event["entry"]["operation"] == "get"
-    ]
-    print(gets)
-    print(runtime.get_trace_stats)
+    for event in runtime.trace["events"]:
+        if event["level"] == "l1":
+            print(event["entry"])
 ```
 
-该模式覆盖全局对象、缺失全局属性、DOM/Browser host 嵌套属性、Trusted Types
-原生对象，以及 microtask/timer 回调中的读取。GET 与 native CALL 使用共享序号，
-因此 trace 保留真实因果顺序。诊断默认关闭；`max_events` 是每个 Runtime 的硬上限。
-详细合同见 [GET tracing](docs/evidence/get-tracing.md)。
+Trace 使用共享递增序号记录 `get`、`set`、`call`、反射、资源、Cookie 和导航操作，
+可保留跨原生回调、Microtask 与 Timer 的因果顺序。诊断默认关闭，避免影响普通执行
+路径。
 
-当 GET trace 已足够、需要进入动态 `eval` 内部定位未执行的初始化分支时，开启
-V8 Inspector precise coverage：
+## 动态代码与 V8 Inspector 诊断
+
+对于包含多层 `eval`、Function Constructor 或动态加载脚本的代码，可以开启
+Inspector precise coverage：
 
 ```python
-import json
 import yatouv8
 
 config = yatouv8.RuntimeConfig(
@@ -110,241 +149,183 @@ config = yatouv8.RuntimeConfig(
         capture_source=True,
         max_scripts=256,
         max_source_bytes=1_048_576,
-    ),
+    )
 )
+
 with yatouv8.Runtime(config) as runtime:
-    runtime.eval(challenge_source)
+    runtime.eval(source)
     capture = runtime.execution_trace
-    blockers = yatouv8.analyze_execution_trace(capture, ("knitsail", "td", "sgs"))
-
-with open("execution-trace.json", "w", encoding="utf-8") as output:
-    json.dump({"capture": capture, "blockers": blockers}, output, ensure_ascii=False, indent=2)
+    blockers = yatouv8.analyze_execution_trace(
+        capture,
+        symbols=("bootstrap", "initialize", "result"),
+    )
 ```
 
-该模式不替换 `eval`、不改写目标源码；它捕获 entry/nested dynamic script 的精确
-源码、SHA-256、函数与 block range 计数，并把位于 zero-count range 内的
-`knitsail`/`td`/`sgs` 出现位置排在 blocker 首位。Inspector 诊断默认关闭，不参与
-最终 Chrome oracle 验收。完整字段见
-[动态 eval execution trace](docs/evidence/execution-tracing.md)。
+该模式会记录 entry script 与动态脚本的 SHA-256、源码、函数范围、block range 和
+执行计数，可用于定位未进入的初始化分支。它不替换 `eval`，也不改写目标源码。
 
-对完整 Google SG_SS challenge，不要把 `window.sgs !== undefined` 或所有
-`undefined` outcome 当作成功门槛。使用
-[Google VM 终态谓词](docs/evidence/google-vm-terminal-predicates.md) 验证最终
-`knitsail`、`td`、`SG_SS` Cookie 与导航链路。
+## 与 HTTP 客户端配合
 
-不扩充 trace、直接比较最可能阻断 `td` 初始化的 API 语义：
+`yatouv8` 本身负责 JavaScript 和浏览器宿主语义；真实 HTTP 请求可以继续由
+`curl_cffi`、`httpx` 或其他 Python 客户端负责。典型流程是：
 
-```powershell
-python tools/semantic-conformance/runner.py `
-  --backend all `
-  --output .yatou/evidence/semantic-conformance/report.json
-```
+1. Python 请求页面并保存响应、Cookie 与网络计时；
+2. 将页面脚本、资源、Cookie 和时钟信息导入 `yatouv8.Runtime`；
+3. 在嵌入式 V8 中执行 JavaScript；
+4. 将生成的 Cookie、导航 URL 和结果导回 Python；
+5. HTTP 客户端继续下一跳请求。
 
-该 probe 以 Chrome 150 为 oracle，同时运行 `iv8_rs` 和已安装的 `yatouv8`
-wheel；动态网络数值与窗口边框差异按不变量归一化，保留类型、brand、descriptor、
-稳定身份和方法返回语义。
-
-执行提取出的 SG_SS challenge，并把 Cookie/导航交回同一个 HTTP session：
+针对单段页面 challenge，项目提供高层封装：
 
 ```python
 import yatouv8
-
-config = yatouv8.RuntimeConfig.from_curl_response(
-    first_response,
-    navigation_start_ms=request_start_ms,
-)
-with yatouv8.Runtime(config) as runtime:
-    runtime.import_cookies(session.cookies)
-    result = runtime.eval_challenge(challenge_source)
-    runtime.export_cookies(session)
-    next_hop = runtime.take_navigation()
-```
-
-`result` 同时返回 value、cookies、pending navigation、drain 结果与 trace stats。
-在线 oracle 必须保持 GET/Inspector trace 关闭；诊断 Proxy 不能进入 token 生成路径。
-
-不维护 Session 对象时，使用正式的高层 challenge API：
-
-```python
-import time
-import yatouv8
-from curl_cffi import requests
-
-proxy = "http://127.0.0.1:7890"
-proxies = {"http": proxy, "https": proxy}
-jar = requests.Cookies()
-
-def merge(response):
-    for item in [*response.history, response]:
-        jar.update(item.cookies)
-
-home = requests.get(
-    "https://www.google.com/",
-    cookies=jar,
-    proxies=proxies,
-    impersonate="chrome146",
-    headers=yatouv8.browser_headers(),
-)
-merge(home)
-
-request_start_ms = time.time_ns() / 1_000_000
-first = requests.get(
-    "https://www.google.com/search?q=亚非",
-    cookies=jar,
-    proxies=proxies,
-    impersonate="chrome146",
-    headers=yatouv8.browser_headers(referer=str(home.url)),
-)
-merge(first)
 
 bundle = yatouv8.solve_with_yatouv8(
-    first,
-    jar,
+    first_response,
+    cookie_jar,
     navigation_start_ms=request_start_ms,
 )
-bundle.apply_cookies(jar)
-second = requests.get(
-    cookies=jar,
-    proxies=proxies,
-    impersonate="chrome146",
+bundle.apply_cookies(cookie_jar)
+
+next_response = requests.get(
+    cookies=cookie_jar,
     **bundle.request_kwargs(),
 )
 ```
 
-`ChallengeBundle` 包含 SG_SS、完整 Cookie、带 `sei` 的导航 URL 和下一跳请求头；
-旧 Session 可以在求解前关闭，也可以完全不创建 Session。不能把完整 Cookie jar
-退化成仅含 SG_SS 的字典。
+`ChallengeBundle` 包含完整 Cookie、下一跳 URL、请求头和执行统计；调用者不必持续
+持有原来的 Session 对象。
 
-执行完整同会话在线硬门禁：
+## 安装与构建
 
-```powershell
-py -3.13 tools\google-vm-acceptance\live_runner.py `
-  --url "https://www.google.com/search?q=亚非" `
-  --proxy "http://127.0.0.1:7890" `
-  --attempts 3 `
-  --output .yatou\evidence\google-vm-live\google-com-ya-fei-live-acceptance.json
+项目包名为 `yatouv8`，支持 CPython 3.10–3.14。正式发布到 PyPI 后可直接安装：
+
+```console
+python -m pip install yatouv8
 ```
 
-只有 HTTP 200、非 `/sorry/`、搜索结果 DOM 和 `SG_SS=0` 四个在线终态同时成立才返回 0。
+在当前源码仓库中，可以安装已经构建好的匹配 wheel：
 
-## 构建 V8 smoke test
-
-前置条件：
-
-- Windows 11 x64
-- Visual Studio 2022 C++ toolchain
-- Windows SDK 10.0.26100.0 或兼容版本
-- Python 3.10–3.14
-- Rust 1.97.1
-
-从源码构建并执行 V8 150：
-
-```powershell
-.\scripts\build-v8-source.ps1
+```console
+python -m pip install dist/yatouv8-0.1.0-cp313-cp313-win_amd64.whl
 ```
 
-脚本会校验并缓存固定版本的 GN、Ninja、Chromium `libclang`、ICU 数据和
-Chromium Rust vendor 源码；成功输出必须包含：
+Windows 本地构建：
+
+```powershell
+# 当前 Python
+.\scripts\build-wheel.ps1
+
+# 指定 Python 3.10
+.\scripts\build-wheel.ps1 `
+  -PythonExecutable "D:\language\python-3.10.1\python.exe"
+
+# Windows ARM64 交叉构建
+.\scripts\build-wheel.ps1 `
+  -TargetId windows-arm64 `
+  -PythonExecutable "D:\language\python-3.10.1\python.exe"
+```
+
+完整发布矩阵覆盖：
+
+- Windows x86_64 / ARM64；
+- macOS x86_64 / Apple Silicon；
+- manylinux glibc x86_64 / ARM64；
+- musllinux x86_64 / ARM64；
+- 每个平台的 CPython 3.10、3.11、3.12、3.13、3.14。
+
+矩阵共定义 40 个 wheel。构建入口、固定容器和原生验收流程见
+[跨平台 wheel 构建说明](docs/building-cross-platform.md)。
+
+## 架构
 
 ```text
-yatouv8 V8 smoke: {"engine":"v8","answer":42,"traceSpine":false}
+Python SDK
+    │  Runtime / Context / eval / resources / cookies / trace
+    ▼
+PyO3 Native Bridge
+    │  类型转换 / 生命周期 / GIL 释放 / owner-thread 调度
+    ▼
+yatou-core
+    │  Isolate / Context / DOM runtime / event loop / clock / storage
+    ▼
+V8 150.4.0
+
+Chrome snapshot ──► diff/ranking ──► Surface Manifest ──► descriptor generator
+                                         │
+                                         └──────────────► 浏览器兼容层
 ```
 
-只检查不依赖 V8 的 Workspace 骨架：
+Workspace 主要模块：
+
+```text
+crates/
+├── yatou-core       # V8 Runtime、Isolate、Context 和浏览器行为 handler
+├── yatou-py         # Python/PyO3 原生扩展
+├── yatou-surface    # 生成的浏览器接口与 descriptor
+├── yatou-schema     # Snapshot、Manifest、Profile、Trace 数据合同
+└── yatou-harness    # Diff、allowance 与因果 blocker ranking
+
+tools/
+├── chrome-collector       # Chrome 基线采集
+├── surface-codegen        # Surface Manifest 代码生成
+├── semantic-conformance   # Chrome/yatouv8 语义差分
+├── trace-inspector        # Trace 与 API ledger 检查
+└── release                # wheel、架构、SBOM 和发布审计
+```
+
+## 当前边界
+
+- `yatouv8` 是 JavaScript 运行时和浏览器宿主模拟，不是完整浏览器；
+- MVP 不包含排版、绘制、字体栅格化和真实页面渲染；
+- `getComputedStyle()` 使用可配置的固定返回策略，不实现布局计算；
+- 离线 Runtime 的 `fetch()` 只读取显式注入资源，不自动访问真实网络；
+- 默认浏览器行为 profile 为 Windows 11 + Chrome 150；
+- 跨平台原生发布矩阵已经实现，最终可发布性以各目标 runner 生成并安装 wheel 的
+  原生 CI 证据为准。
+
+## 验证
+
+运行不依赖在线服务的完整本地检查：
 
 ```powershell
 .\scripts\check.ps1
 ```
 
-采集隔离的 Chrome 150 headless 验证基线：
+从源码构建 V8 并执行 smoke test：
 
 ```powershell
-.\tools\chrome-collector\run.ps1
+.\scripts\build-v8-source.ps1 -Profile release
 ```
 
-首个已验证运行的记录见 [M2 Chrome evidence](docs/evidence/m2-chrome-evidence.md)。
-
-重现 M3 trace 生成、校验、回放、检查和证据准入：
-
-```powershell
-.\scripts\run-m3-spine.ps1
-```
-
-M3 的边界与验证结果见 [M3 Trace spine](docs/evidence/m3-trace-spine.md)。
-
-重新生成 M5 Surface Manifest 与 Rust descriptor 表：
-
-```powershell
-python tools/surface-codegen/generate.py `
-  --snapshot .yatou/evidence/baselines/win11-chrome150.0.7871.188-headful-m2-v3-full/runs/20260808T063559.250211Z-aca4ebfd/snapshot.json `
-  --manifest manifests/chrome150.surface.json `
-  --rust crates/yatou-surface/src/generated/chrome150.rs `
-  --runtime manifests/chrome150.runtime-surface.json
-```
-
-本机已有固定 SHA 的 `InsideReCaptcha/model.js` 与 `enc` 后，重现 M6：
-
-```powershell
-.\scripts\run-m6.ps1
-```
-
-重现 M8–M10：
-
-```powershell
-.\scripts\run-m8.ps1
-.\scripts\run-m9.ps1
-.\scripts\run-m10.ps1
-.\scripts\run-sgss-acceptance.ps1
-```
-
-## 工程结构
+成功输出应包含：
 
 ```text
-crates/
-├── yatou-schema     # Snapshot、Manifest、Profile、Trace 数据合同
-├── yatou-core       # Runtime、Isolate、Context、Scheduler
-├── yatou-surface    # 生成的浏览器接口和 HandlerRegistry
-├── yatou-harness    # Diff、allowance、因果 blocker ranking
-└── yatou-py         # PyO3 扩展
-
-tools/
-├── chrome-collector # Chrome 150 CDP 采集器
-├── google-vm-acceptance # SG_SS 本地谓词与同 session 在线硬门禁
-├── google-vm-collector # 真实归档 BotGuard oracle/diagnostic 与 M6 准入
-├── google-vm-corpus # 当前公开 loader corpus 与 M9 双侧准入
-├── host-conformance # M8 Chrome/yatouv8 同源 probe
-├── release          # SBOM、wheel audit 与 M10 终态报告
-├── semantic-conformance # td 初始化候选 API 的 Chrome/iv8/yatouv8 三方差分
-├── surface-codegen  # Surface Manifest 代码生成器
-└── trace-inspector  # Trace/API ledger 检查工具
+yatouv8 V8 smoke: {"engine":"v8","answer":42,"traceSpine":false}
 ```
 
-## 核心约束
-
-1. Chrome 150 实测行为是唯一规范 oracle。
-2. `iv8`、`ming_iv8_rs` 和 STPyV8 只能作为行为或实现参考。
-3. 新接口必须具有 Chrome evidence、失败的 differential test 和 Manifest 记录。
-4. 生成器负责结构；DOM、CSSOM、Clock 等语义由 Rust handler 实现。
-5. 第一条真实 trace 通过前，不横向扩展 Canvas、WebGL、Worker、Audio 等接口面。
-6. Replay 模式禁止回退到真实网络。
-
-## 架构文档
+## 文档
 
 - [总体架构说明](docs/architecture/README.md)
 - [交互式 HTML 架构图](docs/architecture/yatouv8-overview.html)
 - [架构决策记录](docs/adr/README.md)
-- [参考项目与版本](docs/references.yaml)
-- [M2 Chrome evidence](docs/evidence/m2-chrome-evidence.md)
-- [M3 Trace spine](docs/evidence/m3-trace-spine.md)
-- [M4 Trace diff 与 blocker ranking](docs/evidence/m4-trace-diff.md)
-- [M5 Surface Manifest 与生成器](docs/evidence/m5-surface-generator.md)
-- [M6 归档真实 Google BotGuard 路径](docs/evidence/m6-google-botguard.md)
-- [M7 Runtime 与 Python SDK](docs/evidence/m7-runtime-python.md)
-- [M8 Host conformance](docs/evidence/m8-host-conformance.md)
-- [M9 当前公开 loader corpus](docs/evidence/m9-current-loader-corpus.md)
-- [M10 发布与终态门禁](docs/evidence/m10-release.md)
-- [SG_SS 定向兼容与最终本地验收](docs/evidence/sgss-readiness.md)
+- [跨平台 wheel 构建](docs/building-cross-platform.md)
+- [GET tracing](docs/evidence/get-tracing.md)
+- [动态 eval execution trace](docs/evidence/execution-tracing.md)
+- [Runtime 与 Python SDK](docs/evidence/m7-runtime-python.md)
+- [Host conformance](docs/evidence/m8-host-conformance.md)
+- [发布与终态门禁](docs/evidence/m10-release.md)
+- [参考项目与固定版本](docs/references.yaml)
 
-## 许可证
+## 设计原则
 
-Apache License 2.0。参考项目的源码和发布物保留各自许可证；详见 [NOTICE](NOTICE) 和 [references.yaml](docs/references.yaml)。
+1. Chrome 实测行为是浏览器兼容层的规范来源；
+2. `iv8`、`ming_iv8_rs` 和 STPyV8 仅作为行为或实现参考，不作为核心依赖；
+3. 新接口需要 Chrome evidence、差分测试和 Manifest 记录；
+4. 生成器负责大规模结构面，原生 handler 负责 DOM、CSSOM、Clock 等行为语义；
+5. Trace 输出是诊断数据，不能替代可复现测试与最终运行结果。
+
+## License
+
+Apache License 2.0。参考项目的源码与发布物保留各自许可证，详见
+[NOTICE](NOTICE) 和 [references.yaml](docs/references.yaml)。
