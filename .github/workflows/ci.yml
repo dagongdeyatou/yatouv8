@@ -18,7 +18,7 @@ jobs:
       linux_build: ${{ steps.generate.outputs.linux_build }}
       linux_test: ${{ steps.generate.outputs.linux_test }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: actions/setup-python@v6
         with:
           python-version: "3.13"
@@ -32,7 +32,7 @@ jobs:
   contracts:
     runs-on: windows-2025
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: dtolnay/rust-toolchain@1.97.1
         with:
           components: rustfmt, clippy
@@ -51,7 +51,7 @@ jobs:
       fail-fast: false
       matrix: ${{ fromJSON(needs.wheel-matrix.outputs.windows_build) }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: dtolnay/rust-toolchain@1.97.1
         with:
           targets: ${{ matrix.rust_target }}
@@ -82,7 +82,7 @@ jobs:
       fail-fast: false
       matrix: ${{ fromJSON(needs.wheel-matrix.outputs.windows_test) }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: actions/setup-python@v6
         with:
           python-version: ${{ matrix.python_version }}
@@ -118,7 +118,7 @@ jobs:
       fail-fast: false
       matrix: ${{ fromJSON(needs.wheel-matrix.outputs.macos_build) }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: dtolnay/rust-toolchain@1.97.1
         with:
           targets: ${{ matrix.rust_target }}
@@ -163,7 +163,7 @@ jobs:
       fail-fast: false
       matrix: ${{ fromJSON(needs.wheel-matrix.outputs.linux_build) }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - name: Build ${{ matrix.id }} CPython 3.10-3.14 wheels
         uses: PyO3/maturin-action@86b9d133d34bc1b40018696f782949dac11bd380 # v1.49.4
         with:
@@ -198,7 +198,7 @@ jobs:
       fail-fast: false
       matrix: ${{ fromJSON(needs.wheel-matrix.outputs.linux_test) }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: actions/download-artifact@v4
         with:
           name: ${{ matrix.artifact_name }}
