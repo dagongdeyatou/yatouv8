@@ -68,7 +68,7 @@ jobs:
             -TargetId '${{ matrix.id }}' `
             -PythonExecutable $python `
             -MaturinPythonExecutable $python
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: ${{ matrix.wheel_artifact_name }}
           path: dist/*.whl
@@ -149,7 +149,7 @@ jobs:
       - name: Build and test ${{ matrix.id }} CPython 3.10-3.14 wheels
         shell: bash
         run: bash scripts/build-wheel-macos.sh '${{ matrix.id }}' dist
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: ${{ matrix.artifact_name }}
           path: dist/*.whl
@@ -184,7 +184,7 @@ jobs:
         run: >-
           python tools/build/wheel_matrix.py verify-dist
           --target ${{ matrix.id }} --dist dist
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: ${{ matrix.artifact_name }}
           path: dist/*.whl
