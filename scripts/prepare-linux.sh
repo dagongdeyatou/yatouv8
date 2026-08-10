@@ -50,6 +50,16 @@ install_llvm19_apt() {
 
 if command -v dnf >/dev/null 2>&1; then
   dnf -y install clang clang-devel glib2-devel llvm-devel pkgconf-pkg-config xz
+  # manylinux_2_28 is based on EL8. Chromium's downloaded host-side bindgen
+  # requires GLIBCXX_3.4.26+, while /lib64 still exposes the GCC 8 runtime.
+  # Activate the newest installed GCC toolset so host build tools resolve the
+  # matching libstdc++ without raising the wheel's target glibc baseline.
+  gcc_toolset_enable="$(find /opt/rh -maxdepth 2 -type f -name enable \
+    -path '*/gcc-toolset-*/*' 2>/dev/null | sort -V | tail -n 1)"
+  if [[ -n "${gcc_toolset_enable}" ]]; then
+    # shellcheck disable=SC1090
+    source "${gcc_toolset_enable}"
+  fi
 elif command -v apt-get >/dev/null 2>&1; then
   clang_major="$(clang --version 2>/dev/null | sed -nE 's/.*clang version ([0-9]+).*/\1/p' | head -n 1 || true)"
   if [[ -z "${clang_major}" || "${clang_major}" -lt 19 ]]; then
