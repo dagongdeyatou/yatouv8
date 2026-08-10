@@ -38,6 +38,13 @@ CHROMIUM_RUST_ARCHIVE = "chromium-third-party-rust-26e8ff47.tar.gz"
 CHROMIUM_RUST_PROBE = pathlib.PurePosixPath(
     "chromium_crates_io/vendor/icu_calendar_data-v2/build.rs"
 )
+RUN_BINDGEN_PATH = pathlib.PurePosixPath("build/rust/gni_impl/run_bindgen.py")
+RUN_BINDGEN_ORIGINAL = 'env["LD_LIBRARY_PATH"] = args.ld_library_path'
+RUN_BINDGEN_PATCHED = """env[\"LD_LIBRARY_PATH\"] = os.pathsep.join(
+            value
+            for value in (args.ld_library_path, os.environ.get(\"LD_LIBRARY_PATH\"))
+            if value
+        )"""
 
 
 class PreparationError(RuntimeError):
@@ -234,6 +241,38 @@ def hydrate_chromium_rust(v8_root: pathlib.Path, cache_dir: pathlib.Path) -> pat
     return target
 
 
+def patch_run_bindgen_library_path(v8_root: pathlib.Path) -> pathlib.Path:
+    """Keep the build host C++ runtime visible to Chromium's bindgen.
+
+    Chromium intentionally replaces ``LD_LIBRARY_PATH`` with its libclang
+    directory before launching the downloaded bindgen executable.  On
+    manylinux_2_28 that also hides the GCC toolset's newer libstdc++, causing
+    bindgen to fall back to EL8's ``/lib64/libstdc++.so.6`` and fail on
+    ``GLIBCXX_3.4.26``.  Preserve Chromium's directory at highest priority but
+    append the verified host path inherited from the build container.
+    """
+
+    path = v8_root.joinpath(*RUN_BINDGEN_PATH.parts)
+    try:
+        source = path.read_text(encoding="utf-8")
+    except OSError as error:
+        raise PreparationError(f"unable to read Chromium bindgen runner: {path}") from error
+
+    if RUN_BINDGEN_PATCHED in source:
+        return path
+    occurrences = source.count(RUN_BINDGEN_ORIGINAL)
+    if occurrences != 1:
+        raise PreparationError(
+            "Chromium bindgen runner no longer matches the pinned patch context: "
+            f"expected one assignment, found {occurrences}"
+        )
+    path.write_text(
+        source.replace(RUN_BINDGEN_ORIGINAL, RUN_BINDGEN_PATCHED),
+        encoding="utf-8",
+    )
+    return path
+
+
 def prepare(
     *,
     cargo: str,
@@ -249,6 +288,7 @@ def prepare(
     root = v8_root.resolve() if v8_root else locate_v8_root(cargo_home)
     icu = hydrate_icu(root)
     chromium_rust = hydrate_chromium_rust(root, cache_dir)
+    run_bindgen = patch_run_bindgen_library_path(root)
     return {
         "schema": "yatouv8.v8-source-preparation.v1",
         "v8_version": V8_VERSION,
@@ -258,6 +298,12 @@ def prepare(
             "path": str(chromium_rust),
             "tree_sha256": CHROMIUM_RUST_TREE_SHA256,
             "probe": str(chromium_rust.joinpath(*CHROMIUM_RUST_PROBE.parts)),
+        },
+        "patches": {
+            "run_bindgen_library_path": {
+                "path": str(run_bindgen),
+                "sha256": sha256_file(run_bindgen),
+            }
         },
     }
 

@@ -157,12 +157,18 @@ if ($LASTEXITCODE -ne 0 -or $rustcVersion -notmatch '(?m)^host:\s*(\S+)\s*$') {
 $hostTarget = $Matches[1]
 $effectiveTarget = if ($Target) { $Target } else { $hostTarget }
 $isCross = $effectiveTarget -ne $hostTarget
-$msvcArchitecture = switch -Regex ($effectiveTarget) {
+$targetMsvcArchitecture = switch -Regex ($effectiveTarget) {
     '^aarch64-pc-windows-msvc$' { 'arm64'; break }
     '^x86_64-pc-windows-msvc$' { 'amd64'; break }
     default { throw "Unsupported Windows V8 target: $effectiveTarget" }
 }
-Import-VisualStudioEnvironment -Architecture $msvcArchitecture
+# Cross builds still execute GN, bindgen, Torque, and Rust build scripts on
+# the x64 runner.  Build the V8-containing rlib under an x64 developer
+# environment first; Chromium selects the ARM64 target toolchain from GN's
+# target_cpu.  The final target executable/wheel is linked in a second stage
+# after switching to the ARM64 developer environment.
+$v8BuildMsvcArchitecture = if ($isCross) { 'amd64' } else { $targetMsvcArchitecture }
+Import-VisualStudioEnvironment -Architecture $v8BuildMsvcArchitecture
 
 if ($Target) {
     & (Join-Path (Split-Path -Parent $cargo) 'rustup.exe') target add `
@@ -247,6 +253,26 @@ Write-Host "CARGO_TARGET_DIR=$env:CARGO_TARGET_DIR"
 Write-Host "BINDGEN_EXTRA_CLANG_ARGS=$env:BINDGEN_EXTRA_CLANG_ARGS"
 Write-Host "ICU_DATA=$icuData"
 Write-Host "CHROMIUM_RUST=$chromiumRust"
+if ($isCross) {
+    $v8Arguments = @(
+        'build',
+        '-p', 'yatou-core',
+        '--lib',
+        '--features', 'v8-runtime',
+        '--locked'
+    )
+    if ($Profile -eq 'release') {
+        $v8Arguments += '--release'
+    }
+    $v8Arguments += @('--target', $Target)
+    Write-Host "Building target V8 rlib with x64 host tools before final cross link"
+    & $cargo @v8Arguments
+    if ($LASTEXITCODE -ne 0) {
+        exit $LASTEXITCODE
+    }
+    Import-VisualStudioEnvironment -Architecture $targetMsvcArchitecture
+    Write-Host "Switched Visual Studio environment to $targetMsvcArchitecture for final target link"
+}
 & $cargo @arguments
 if ($LASTEXITCODE -ne 0) {
     exit $LASTEXITCODE

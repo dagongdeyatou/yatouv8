@@ -3,6 +3,7 @@ from __future__ import annotations
 import gzip
 import importlib.util
 import io
+import os
 import pathlib
 import tarfile
 import tempfile
@@ -97,6 +98,54 @@ class PrepareV8SourceTests(unittest.TestCase):
                 prepare_v8_source.archive_tree_sha256(first),
                 prepare_v8_source.archive_tree_sha256(second),
             )
+
+    def test_patch_run_bindgen_preserves_inherited_library_path(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = pathlib.Path(temporary)
+            runner = root.joinpath(*prepare_v8_source.RUN_BINDGEN_PATH.parts)
+            runner.parent.mkdir(parents=True)
+            runner.write_text(
+                "import os\n"
+                "env = {}\n"
+                "args = type('Args', (), {'ld_library_path': '/chromium/clang'})()\n"
+                "env[\"LD_LIBRARY_PATH\"] = args.ld_library_path\n",
+                encoding="utf-8",
+            )
+
+            prepare_v8_source.patch_run_bindgen_library_path(root)
+            first = runner.read_text(encoding="utf-8")
+            prepare_v8_source.patch_run_bindgen_library_path(root)
+            second = runner.read_text(encoding="utf-8")
+
+            self.assertEqual(first, second)
+            self.assertIn('os.environ.get("LD_LIBRARY_PATH")', first)
+            namespace: dict[str, object] = {}
+            previous = os.environ.get("LD_LIBRARY_PATH")
+            try:
+                os.environ["LD_LIBRARY_PATH"] = "/opt/rh/gcc-toolset/lib64"
+                exec(first, namespace)
+            finally:
+                if previous is None:
+                    os.environ.pop("LD_LIBRARY_PATH", None)
+                else:
+                    os.environ["LD_LIBRARY_PATH"] = previous
+            self.assertEqual(
+                namespace["env"]["LD_LIBRARY_PATH"],
+                os.pathsep.join(
+                    ("/chromium/clang", "/opt/rh/gcc-toolset/lib64")
+                ),
+            )
+
+    def test_patch_run_bindgen_rejects_unknown_source(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = pathlib.Path(temporary)
+            runner = root.joinpath(*prepare_v8_source.RUN_BINDGEN_PATH.parts)
+            runner.parent.mkdir(parents=True)
+            runner.write_text("# changed upstream\n", encoding="utf-8")
+            with self.assertRaisesRegex(
+                prepare_v8_source.PreparationError, "no longer matches"
+            ):
+                prepare_v8_source.patch_run_bindgen_library_path(root)
 
 
 if __name__ == "__main__":

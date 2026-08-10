@@ -49,17 +49,28 @@ install_llvm19_apt() {
 }
 
 if command -v dnf >/dev/null 2>&1; then
-  dnf -y install clang clang-devel glib2-devel llvm-devel pkgconf-pkg-config xz
+  dnf -y install \
+    clang clang-devel glib2-devel llvm-devel pkgconf-pkg-config xz \
+    gcc-toolset-14-gcc-c++
   # manylinux_2_28 is based on EL8. Chromium's downloaded host-side bindgen
   # requires GLIBCXX_3.4.26+, while /lib64 still exposes the GCC 8 runtime.
   # Activate the newest installed GCC toolset so host build tools resolve the
   # matching libstdc++ without raising the wheel's target glibc baseline.
-  gcc_toolset_enable="$(find /opt/rh -maxdepth 2 -type f -name enable \
-    -path '*/gcc-toolset-*/*' 2>/dev/null | sort -V | tail -n 1)"
-  if [[ -n "${gcc_toolset_enable}" ]]; then
-    # shellcheck disable=SC1090
-    source "${gcc_toolset_enable}"
+  gcc_toolset_root="$(find /opt/rh -mindepth 1 -maxdepth 1 -type d \
+    -name 'gcc-toolset-*' 2>/dev/null | sort -V | tail -n 1)"
+  if [[ -z "${gcc_toolset_root}" ]]; then
+    echo "a GCC toolset runtime is required for Chromium host tools" >&2
+    return 2
   fi
+  gcc_runtime_dir="${gcc_toolset_root}/root/usr/lib64"
+  gcc_runtime="${gcc_runtime_dir}/libstdc++.so.6"
+  if [[ ! -e "${gcc_runtime}" ]] || \
+      ! strings "${gcc_runtime}" | grep -q 'GLIBCXX_3\.4\.26'; then
+    echo "${gcc_runtime} does not provide GLIBCXX_3.4.26" >&2
+    return 2
+  fi
+  export PATH="${gcc_toolset_root}/root/usr/bin:${PATH}"
+  export LD_LIBRARY_PATH="${gcc_runtime_dir}:${gcc_toolset_root}/root/usr/lib${LD_LIBRARY_PATH:+:${LD_LIBRARY_PATH}}"
 elif command -v apt-get >/dev/null 2>&1; then
   clang_major="$(clang --version 2>/dev/null | sed -nE 's/.*clang version ([0-9]+).*/\1/p' | head -n 1 || true)"
   if [[ -z "${clang_major}" || "${clang_major}" -lt 19 ]]; then
