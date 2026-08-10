@@ -85,7 +85,8 @@ references:
   - id: chromium_third_party_rust
     url: "https://chromium.googlesource.com/chromium/src/third_party/rust"
     commit: "26e8ff47f18a8d28d6187a04b6a16cb7332356f8"
-    archive_sha256: "23326dc97cc82b2e0b551f823c8afb0a91524abcfe078c50d38dbdf37fe0eb92"
+    tree_sha256: "b9aa1ddbf440b8e5234e029a2ad223f461c1b4fca12c9e168b5e4f5f7ee322ee"
+    tree_hash_scheme: "SHA-256 over sorted files: uint64be(path length), UTF-8 path, uint64be(size), SHA-256(content)"
     license: "Per-crate licenses recorded by Chromium"
     role: "Pinned Chromium Rust vendor sources omitted from the crates.io v8 source package"
     normative: false

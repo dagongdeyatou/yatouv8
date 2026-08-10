@@ -31,8 +31,8 @@ CHROMIUM_RUST_URL = (
     "https://chromium.googlesource.com/chromium/src/third_party/rust/+archive/"
     "26e8ff47f18a8d28d6187a04b6a16cb7332356f8.tar.gz"
 )
-CHROMIUM_RUST_SHA256 = (
-    "23326dc97cc82b2e0b551f823c8afb0a91524abcfe078c50d38dbdf37fe0eb92"
+CHROMIUM_RUST_TREE_SHA256 = (
+    "b9aa1ddbf440b8e5234e029a2ad223f461c1b4fca12c9e168b5e4f5f7ee322ee"
 )
 CHROMIUM_RUST_ARCHIVE = "chromium-third-party-rust-26e8ff47.tar.gz"
 CHROMIUM_RUST_PROBE = pathlib.PurePosixPath(
@@ -66,12 +66,19 @@ def default_cache_dir() -> pathlib.Path:
     return root / "yatouv8" / "downloads"
 
 
-def _download(url: str, destination: pathlib.Path, expected_sha256: str) -> pathlib.Path:
+def _download(
+    url: str,
+    destination: pathlib.Path,
+    expected_tree_sha256: str,
+) -> pathlib.Path:
     destination.parent.mkdir(parents=True, exist_ok=True)
     if destination.is_file():
-        actual = sha256_file(destination)
-        if actual == expected_sha256:
-            return destination
+        try:
+            actual = archive_tree_sha256(destination)
+            if actual == expected_tree_sha256:
+                return destination
+        except PreparationError:
+            pass
         destination.unlink()
 
     temporary = destination.with_name(f".{destination.name}.{os.getpid()}.tmp")
@@ -79,10 +86,11 @@ def _download(url: str, destination: pathlib.Path, expected_sha256: str) -> path
         request = urllib.request.Request(url, headers={"User-Agent": "yatouv8-build/0.1"})
         with urllib.request.urlopen(request, timeout=900) as response, temporary.open("wb") as sink:
             shutil.copyfileobj(response, sink, length=1024 * 1024)
-        actual = sha256_file(temporary)
-        if actual != expected_sha256:
+        actual = archive_tree_sha256(temporary)
+        if actual != expected_tree_sha256:
             raise PreparationError(
-                f"download checksum mismatch for {url}: expected {expected_sha256}, got {actual}"
+                f"download tree checksum mismatch for {url}: "
+                f"expected {expected_tree_sha256}, got {actual}"
             )
         temporary.replace(destination)
     finally:
@@ -136,6 +144,7 @@ def hydrate_icu(v8_root: pathlib.Path, url: str = ICU_URL) -> pathlib.Path:
 
 def _safe_members(archive: tarfile.TarFile) -> list[tarfile.TarInfo]:
     members: list[tarfile.TarInfo] = []
+    names: set[str] = set()
     for member in archive.getmembers():
         path = pathlib.PurePosixPath(member.name)
         if path.is_absolute() or ".." in path.parts:
@@ -144,8 +153,41 @@ def _safe_members(archive: tarfile.TarFile) -> list[tarfile.TarInfo]:
             raise PreparationError(f"archive links are not permitted: {member.name}")
         if not (member.isdir() or member.isfile()):
             raise PreparationError(f"unsupported archive entry: {member.name}")
+        if member.name in names:
+            raise PreparationError(f"duplicate archive entry: {member.name}")
+        names.add(member.name)
         members.append(member)
     return members
+
+
+def archive_tree_sha256(archive_path: pathlib.Path) -> str:
+    """Hash extracted file paths, sizes, and contents independent of gzip bytes."""
+
+    records: list[tuple[str, int, bytes]] = []
+    try:
+        with tarfile.open(archive_path, "r:gz") as archive:
+            for member in _safe_members(archive):
+                if not member.isfile():
+                    continue
+                source = archive.extractfile(member)
+                if source is None:
+                    raise PreparationError(f"failed to read archive entry: {member.name}")
+                digest = hashlib.sha256()
+                with source:
+                    for block in iter(lambda: source.read(1024 * 1024), b""):
+                        digest.update(block)
+                records.append((member.name, member.size, digest.digest()))
+    except tarfile.TarError as error:
+        raise PreparationError(f"invalid tar archive {archive_path}: {error}") from error
+
+    tree = hashlib.sha256()
+    for name, size, digest in sorted(records):
+        encoded_name = name.encode("utf-8")
+        tree.update(len(encoded_name).to_bytes(8, "big"))
+        tree.update(encoded_name)
+        tree.update(size.to_bytes(8, "big"))
+        tree.update(digest)
+    return tree.hexdigest()
 
 
 def _extract_verified_archive(archive_path: pathlib.Path, destination: pathlib.Path) -> None:
@@ -176,7 +218,7 @@ def hydrate_chromium_rust(v8_root: pathlib.Path, cache_dir: pathlib.Path) -> pat
     archive_path = _download(
         CHROMIUM_RUST_URL,
         cache_dir / CHROMIUM_RUST_ARCHIVE,
-        CHROMIUM_RUST_SHA256,
+        CHROMIUM_RUST_TREE_SHA256,
     )
     with tempfile.TemporaryDirectory(prefix="yatouv8-rust-vendor-") as temporary:
         extracted = pathlib.Path(temporary)
@@ -214,7 +256,7 @@ def prepare(
         "icu_data": {"path": str(icu), "sha256": sha256_file(icu)},
         "chromium_rust": {
             "path": str(chromium_rust),
-            "archive_sha256": CHROMIUM_RUST_SHA256,
+            "tree_sha256": CHROMIUM_RUST_TREE_SHA256,
             "probe": str(chromium_rust.joinpath(*CHROMIUM_RUST_PROBE.parts)),
         },
     }

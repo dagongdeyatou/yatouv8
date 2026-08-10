@@ -176,7 +176,9 @@ jobs:
           before-script-linux: |
             export YATOU_WHEEL_TARGET='${{ matrix.id }}'
             source scripts/prepare-linux.sh
-          sccache: true
+          # Custom manylinux/musl images do not contain the host action's
+          # sccache binary. Avoid exporting an unusable RUSTC_WRAPPER.
+          sccache: false
           args: >-
             --release --locked --auditwheel repair --compatibility pypi --out dist
             -i python3.10 python3.11 python3.12 python3.13 python3.14

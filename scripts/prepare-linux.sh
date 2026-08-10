@@ -32,16 +32,17 @@ install_llvm19_apt() {
   apt-get install -y --no-install-recommends \
     ca-certificates curl gnupg libglib2.0-dev pkg-config xz-utils
 
-  if ! apt-cache show clang-19 libclang-19-dev >/dev/null 2>&1; then
-    . /etc/os-release
-    codename="${VERSION_CODENAME:-jammy}"
-    keyring=/usr/share/keyrings/llvm-archive-keyring.gpg
-    curl --fail --location --retry 3 --silent --show-error \
-      https://apt.llvm.org/llvm-snapshot.gpg.key | gpg --dearmor > "${keyring}"
-    echo "deb [signed-by=${keyring}] https://apt.llvm.org/${codename}/ llvm-toolchain-${codename}-19 main" \
-      > /etc/apt/sources.list.d/llvm19.list
-    apt-get update
-  fi
+  # `apt-cache show` may succeed for metadata whose Candidate is `(none)`.
+  # Always install the signed upstream LLVM repository before requesting the
+  # versioned packages so old Ubuntu cross images cannot silently skip it.
+  . /etc/os-release
+  codename="${VERSION_CODENAME:-jammy}"
+  keyring=/usr/share/keyrings/llvm-archive-keyring.gpg
+  curl --fail --location --retry 3 --silent --show-error \
+    https://apt.llvm.org/llvm-snapshot.gpg.key | gpg --dearmor > "${keyring}"
+  echo "deb [signed-by=${keyring}] https://apt.llvm.org/${codename}/ llvm-toolchain-${codename}-19 main" \
+    > /etc/apt/sources.list.d/llvm19.list
+  apt-get update
 
   apt-get install -y --no-install-recommends clang-19 libclang-19-dev
   export PATH="/usr/lib/llvm-19/bin:${PATH}"

@@ -13,10 +13,12 @@ if (!(Test-Path -LiteralPath $cargo)) {
 }
 
 $pythonCandidates = @(
-    $env:PYTHON,
-    'C:\ProgramData\anaconda3\python.exe',
-    (Get-Command python -ErrorAction SilentlyContinue | Select-Object -ExpandProperty Source -First 1)
-) | Where-Object { $_ -and (Test-Path -LiteralPath $_) }
+    @(
+        $env:PYTHON,
+        'C:\ProgramData\anaconda3\python.exe',
+        (Get-Command python -ErrorAction SilentlyContinue | Select-Object -ExpandProperty Source -First 1)
+    ) | Where-Object { $_ -and (Test-Path -LiteralPath $_) }
+)
 
 if ($pythonCandidates.Count -eq 0) {
     throw 'Python 3 was not found. Set the PYTHON environment variable explicitly.'
