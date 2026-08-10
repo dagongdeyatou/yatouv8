@@ -62,7 +62,9 @@ Invoke-PythonStep -Arguments @(
 )
 Invoke-PythonStep -Arguments @('-m', 'unittest', 'discover', 'tools/chrome-collector/tests', '-v')
 Invoke-PythonStep -Arguments @('-m', 'unittest', 'discover', 'tools/build/tests', '-v')
-Invoke-PythonStep -Arguments @('-m', 'unittest', 'discover', 'tools/google-vm-acceptance', '-p', 'test_*.py', '-v')
+# These are pure contract tests. Disable site initialization so an installed
+# yatouv8/curl_cffi cannot accidentally hide an undeclared pre-build import.
+Invoke-PythonStep -Arguments @('-S', '-m', 'unittest', 'discover', 'tools/google-vm-acceptance', '-p', 'test_*.py', '-v')
 Invoke-PythonStep -Arguments @('-m', 'unittest', 'discover', 'tools/surface-codegen/tests', '-v')
 Invoke-PythonStep -Arguments @('-m', 'unittest', 'discover', 'tools/trace-inspector/tests', '-v')
 Invoke-PythonStep -Arguments @('-m', 'unittest', 'discover', 'tools/release/tests', '-v')

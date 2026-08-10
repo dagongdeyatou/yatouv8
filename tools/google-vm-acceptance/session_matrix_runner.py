@@ -14,9 +14,6 @@ import time
 from typing import Any, Iterable
 from urllib.parse import urlsplit
 
-from curl_cffi import CurlInfo
-from curl_cffi.requests import Session
-
 from live_runner import (
     browser_headers,
     execute_challenge,
@@ -36,8 +33,10 @@ STRATEGIES = (
 )
 
 
-def curl_infos() -> list[CurlInfo]:
+def curl_infos() -> list[Any]:
     """Return the timing fields needed by RuntimeConfig.from_curl_response."""
+
+    from curl_cffi import CurlInfo
 
     return [
         CurlInfo.NAMELOOKUP_TIME,
@@ -154,6 +153,8 @@ def run_strategy(
     replay_count: int,
 ) -> dict[str, Any]:
     """Obtain a fresh challenge and evaluate one session-transfer strategy."""
+
+    from curl_cffi.requests import Session
 
     if strategy not in STRATEGIES:
         raise ValueError(f"unknown strategy: {strategy}")

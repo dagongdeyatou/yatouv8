@@ -11,8 +11,6 @@ import re
 from typing import Any
 from urllib.parse import parse_qsl, urlsplit
 
-import yatouv8
-
 
 def parse_arguments() -> argparse.Namespace:
     parser = argparse.ArgumentParser()
@@ -170,6 +168,10 @@ def redacted_cookie_record(cookie: dict[str, Any]) -> dict[str, Any]:
 
 
 def main() -> int:
+    # Keep the pure acceptance helpers importable in contract-only jobs where
+    # the native extension has not been built yet.
+    import yatouv8
+
     arguments = parse_arguments()
     html = arguments.html.read_text(encoding="utf-8")
     scripts = inline_scripts(html)

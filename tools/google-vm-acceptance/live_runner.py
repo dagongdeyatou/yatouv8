@@ -16,8 +16,6 @@ import time
 from typing import Any, Iterable
 from urllib.parse import parse_qsl, urlsplit
 
-import yatouv8
-
 
 WINDOWS_CHROME_150_UA = (
     "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
@@ -206,6 +204,10 @@ def execute_challenge(
     navigation_start_ms: float,
 ) -> dict[str, Any]:
     """Execute the first four inline scripts with a request-coupled clock."""
+
+    # The native runtime is only required for an actual challenge execution.
+    # Keeping this import local lets the pure helpers run in pre-build CI.
+    import yatouv8
 
     scripts = inline_scripts(response.text)
     selected = scripts[:4]
