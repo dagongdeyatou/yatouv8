@@ -135,6 +135,8 @@ class PrepareV8SourceTests(unittest.TestCase):
                     "YATOU_BINDGEN_EXE",
                     "YATOU_RUSTFMT_EXE",
                     "YATOU_LIBCLANG_PATH",
+                    "BINDGEN_EXTRA_CLANG_ARGS",
+                    "BINDGEN_EXTRA_CLANG_ARGS_aarch64_unknown_linux_gnu",
                 )
             }
             try:
@@ -152,6 +154,10 @@ class PrepareV8SourceTests(unittest.TestCase):
                 os.environ["YATOU_BINDGEN_EXE"] = "/host/bindgen"
                 os.environ["YATOU_RUSTFMT_EXE"] = "/host/rustfmt"
                 os.environ["YATOU_LIBCLANG_PATH"] = "/host/libclang"
+                os.environ["BINDGEN_EXTRA_CLANG_ARGS"] = "--target=global"
+                os.environ[
+                    "BINDGEN_EXTRA_CLANG_ARGS_aarch64_unknown_linux_gnu"
+                ] = "--target=aarch64-unknown-linux-gnu"
                 exec(first, namespace)
             finally:
                 prepare_v8_source.subprocess.check_call = original_check_call
@@ -165,6 +171,11 @@ class PrepareV8SourceTests(unittest.TestCase):
                 os.pathsep.join(("/chromium/clang", "/host/lib")),
             )
             self.assertEqual(namespace["env"]["LIBCLANG_PATH"], "/host/libclang")
+            self.assertNotIn("BINDGEN_EXTRA_CLANG_ARGS", namespace["env"])
+            self.assertNotIn(
+                "BINDGEN_EXTRA_CLANG_ARGS_aarch64_unknown_linux_gnu",
+                namespace["env"],
+            )
             self.assertEqual(calls[0][0], ["/host/bindgen"])
             self.assertEqual(calls[1][0], ["/host/rustfmt"])
 

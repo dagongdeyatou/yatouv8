@@ -46,9 +46,15 @@ RUN_BINDGEN_PATCHED = """env[\"LD_LIBRARY_PATH\"] = os.pathsep.join(
             if value
         )"""
 RUN_BINDGEN_LIBCLANG_ORIGINAL = 'env["LIBCLANG_PATH"] = args.libclang_path'
-RUN_BINDGEN_LIBCLANG_PATCHED = """env[\"LIBCLANG_PATH\"] = os.environ.get(
+RUN_BINDGEN_LIBCLANG_PATCHED_V1 = """env[\"LIBCLANG_PATH\"] = os.environ.get(
             \"YATOU_LIBCLANG_PATH\", args.libclang_path
         )"""
+RUN_BINDGEN_LIBCLANG_PATCHED = RUN_BINDGEN_LIBCLANG_PATCHED_V1 + """; env = {
+            name: value
+            for name, value in env.items()
+            if name != \"BINDGEN_EXTRA_CLANG_ARGS\"
+            and not name.startswith(\"BINDGEN_EXTRA_CLANG_ARGS_\")
+        }"""
 RUN_BINDGEN_EXEC_ORIGINAL = (
     "subprocess.check_call([args.bindgen_exe, *genargs], env=env)"
 )
@@ -265,6 +271,8 @@ def patch_run_bindgen_library_path(v8_root: pathlib.Path) -> pathlib.Path:
     requires a newer libstdc++ than manylinux_2_28 provides.  Preserve the
     inherited loader path and allow the build scripts to substitute a bindgen,
     rustfmt, and libclang compiled or installed for the actual build host.
+    Target-specific Cargo bindgen flags must not leak into Chromium's GN host
+    bindgen actions, whose command lines already carry their exact target.
     """
 
     path = v8_root.joinpath(*RUN_BINDGEN_PATH.parts)
@@ -272,6 +280,16 @@ def patch_run_bindgen_library_path(v8_root: pathlib.Path) -> pathlib.Path:
         source = path.read_text(encoding="utf-8")
     except OSError as error:
         raise PreparationError(f"unable to read Chromium bindgen runner: {path}") from error
+
+    if (
+        RUN_BINDGEN_LIBCLANG_PATCHED_V1 in source
+        and RUN_BINDGEN_LIBCLANG_PATCHED not in source
+    ):
+        source = source.replace(
+            RUN_BINDGEN_LIBCLANG_PATCHED_V1,
+            RUN_BINDGEN_LIBCLANG_PATCHED,
+            1,
+        )
 
     replacements = (
         (RUN_BINDGEN_ORIGINAL, RUN_BINDGEN_PATCHED),
