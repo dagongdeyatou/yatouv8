@@ -113,7 +113,9 @@ if [[ -z "${rustfmt_exe}" ]]; then
 fi
 export YATOU_BINDGEN_EXE="${host_tools}/bin/bindgen"
 export YATOU_RUSTFMT_EXE="${rustfmt_exe}"
-export YATOU_LIBCLANG_PATH="${LIBCLANG_PATH}"
+# Keep Chromium's own bundled libclang for Chromium GN bindgen actions. Its
+# command-line flags are tied to that exact clang revision; LIBCLANG_PATH above
+# remains available to Cargo build scripts outside Chromium's GN graph.
 
 if [[ "${target_libc}" == "musl" ]]; then
   musl_sysroot="${RUSTY_V8_MUSL_SYSROOT:-${TARGET_HOME:-}}"
