@@ -106,35 +106,67 @@ class PrepareV8SourceTests(unittest.TestCase):
             runner.parent.mkdir(parents=True)
             runner.write_text(
                 "import os\n"
+                "import subprocess\n"
                 "env = {}\n"
-                "args = type('Args', (), {'ld_library_path': '/chromium/clang'})()\n"
-                "env[\"LD_LIBRARY_PATH\"] = args.ld_library_path\n",
+                "args = type('Args', (), {\n"
+                "    'ld_library_path': '/chromium/clang',\n"
+                "    'libclang_path': '/chromium/libclang',\n"
+                "    'bindgen_exe': '/chromium/bindgen',\n"
+                "    'rustfmt_exe': '/chromium/rustfmt',\n"
+                "})()\n"
+                "genargs = []\n"
+                "fmtargs = []\n"
+                "env[\"LD_LIBRARY_PATH\"] = args.ld_library_path\n"
+                "env[\"LIBCLANG_PATH\"] = args.libclang_path\n"
+                "subprocess.check_call([args.bindgen_exe, *genargs], env=env)\n"
+                "subprocess.check_call([args.rustfmt_exe, *fmtargs])\n",
                 encoding="utf-8",
             )
 
-            prepare_v8_source.patch_run_bindgen_library_path(root)
-            first = runner.read_text(encoding="utf-8")
-            prepare_v8_source.patch_run_bindgen_library_path(root)
-            second = runner.read_text(encoding="utf-8")
-
-            self.assertEqual(first, second)
-            self.assertIn('os.environ.get("LD_LIBRARY_PATH")', first)
-            namespace: dict[str, object] = {}
-            previous = os.environ.get("LD_LIBRARY_PATH")
+            original_check_call = prepare_v8_source.subprocess.check_call
+            calls: list[tuple[list[str], dict[str, object]]] = []
+            prepare_v8_source.subprocess.check_call = (
+                lambda command, **kwargs: calls.append((command, kwargs))
+            )
+            previous = {
+                name: os.environ.get(name)
+                for name in (
+                    "LD_LIBRARY_PATH",
+                    "YATOU_BINDGEN_EXE",
+                    "YATOU_RUSTFMT_EXE",
+                    "YATOU_LIBCLANG_PATH",
+                )
+            }
             try:
-                os.environ["LD_LIBRARY_PATH"] = "/opt/rh/gcc-toolset/lib64"
+                prepare_v8_source.patch_run_bindgen_library_path(root)
+                first = runner.read_text(encoding="utf-8")
+                prepare_v8_source.patch_run_bindgen_library_path(root)
+                second = runner.read_text(encoding="utf-8")
+
+                self.assertEqual(first, second)
+                self.assertIn('os.environ.get("LD_LIBRARY_PATH")', first)
+                self.assertIn('os.environ.get("YATOU_BINDGEN_EXE"', first)
+                self.assertIn('os.environ.get("YATOU_RUSTFMT_EXE"', first)
+                namespace: dict[str, object] = {}
+                os.environ["LD_LIBRARY_PATH"] = "/host/lib"
+                os.environ["YATOU_BINDGEN_EXE"] = "/host/bindgen"
+                os.environ["YATOU_RUSTFMT_EXE"] = "/host/rustfmt"
+                os.environ["YATOU_LIBCLANG_PATH"] = "/host/libclang"
                 exec(first, namespace)
             finally:
-                if previous is None:
-                    os.environ.pop("LD_LIBRARY_PATH", None)
-                else:
-                    os.environ["LD_LIBRARY_PATH"] = previous
+                prepare_v8_source.subprocess.check_call = original_check_call
+                for name, value in previous.items():
+                    if value is None:
+                        os.environ.pop(name, None)
+                    else:
+                        os.environ[name] = value
             self.assertEqual(
                 namespace["env"]["LD_LIBRARY_PATH"],
-                os.pathsep.join(
-                    ("/chromium/clang", "/opt/rh/gcc-toolset/lib64")
-                ),
+                os.pathsep.join(("/chromium/clang", "/host/lib")),
             )
+            self.assertEqual(namespace["env"]["LIBCLANG_PATH"], "/host/libclang")
+            self.assertEqual(calls[0][0], ["/host/bindgen"])
+            self.assertEqual(calls[1][0], ["/host/rustfmt"])
 
     def test_patch_run_bindgen_rejects_unknown_source(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:

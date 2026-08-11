@@ -50,42 +50,7 @@ install_llvm19_apt() {
 
 if command -v dnf >/dev/null 2>&1; then
   dnf -y install \
-    clang clang-devel glib2-devel llvm-devel pkgconf-pkg-config xz \
-    gcc-toolset-14-gcc-c++
-  # manylinux_2_28 is based on EL8. Chromium's downloaded host-side bindgen
-  # requires GLIBCXX_3.4.26+, while /lib64 still exposes the GCC 8 runtime.
-  # Activate the newest installed GCC toolset so host build tools resolve the
-  # matching libstdc++ without raising the wheel's target glibc baseline.
-  gcc_toolset_root="$(find /opt/rh -mindepth 1 -maxdepth 1 -type d \
-    -name 'gcc-toolset-*' 2>/dev/null | sort -V | tail -n 1)"
-  if [[ -z "${gcc_toolset_root}" ]]; then
-    echo "a GCC toolset runtime is required for Chromium host tools" >&2
-    return 2
-  fi
-  # The compatibility symlink in root/usr/lib64 may resolve back to EL8's
-  # system GCC 8 runtime.  Locate the actual Toolset payload instead of
-  # trusting that symlink, then put the payload's directory on the loader path.
-  mapfile -d '' gcc_runtime_candidates < <(
-    find "${gcc_toolset_root}/root/usr" -type f \
-      -name 'libstdc++.so.6.*' -print0 2>/dev/null
-  )
-  gcc_runtime=""
-  for candidate in "${gcc_runtime_candidates[@]}"; do
-    # Avoid `grep -q`: under pipefail its early exit can SIGPIPE `strings` and
-    # turn a successful symbol match into a failed pipeline.
-    if strings "${candidate}" | grep 'GLIBCXX_3\.4\.26' >/dev/null; then
-      gcc_runtime="${candidate}"
-      break
-    fi
-  done
-  if [[ -z "${gcc_runtime}" ]]; then
-    echo "${gcc_toolset_root} does not provide a libstdc++ with GLIBCXX_3.4.26" >&2
-    return 2
-  fi
-  gcc_runtime_dir="$(dirname "${gcc_runtime}")"
-  export PATH="${gcc_toolset_root}/root/usr/bin:${PATH}"
-  export LD_LIBRARY_PATH="${gcc_runtime_dir}:${gcc_toolset_root}/root/usr/lib${LD_LIBRARY_PATH:+:${LD_LIBRARY_PATH}}"
-  echo "GCC_RUNTIME=${gcc_runtime}"
+    clang clang-devel glib2-devel llvm-devel pkgconf-pkg-config xz
 elif command -v apt-get >/dev/null 2>&1; then
   clang_major="$(clang --version 2>/dev/null | sed -nE 's/.*clang version ([0-9]+).*/\1/p' | head -n 1 || true)"
   if [[ -z "${clang_major}" || "${clang_major}" -lt 19 ]]; then
@@ -125,6 +90,31 @@ export CARGO_TERM_COLOR=always
 export NUM_JOBS="${NUM_JOBS:-$(nproc)}"
 export LIBCLANG_PATH="$(dirname "${libclang}")"
 
+# Chromium's downloaded bindgen requires GLIBCXX_3.4.26, which the EL8
+# manylinux_2_28 baseline intentionally does not provide. Build the exact
+# Chromium bindgen version with the active host Rust toolchain instead. This
+# keeps host-tool requirements separate from the wheel's target ABI.
+host_tools="/tmp/yatouv8-host-tools"
+host_rust_target="$(rustc -vV | sed -n 's/^host: //p')"
+if [[ -z "${host_rust_target}" ]]; then
+  echo "unable to determine the Rust host target" >&2
+  return 2
+fi
+if [[ ! -x "${host_tools}/bin/bindgen" ]] || \
+    [[ "$("${host_tools}/bin/bindgen" --version)" != "bindgen 0.72.1" ]]; then
+  rm -rf "${host_tools}"
+  cargo install bindgen-cli --version 0.72.1 --locked \
+    --target "${host_rust_target}" --root "${host_tools}"
+fi
+rustfmt_exe="$(command -v rustfmt || true)"
+if [[ -z "${rustfmt_exe}" ]]; then
+  echo "rustfmt is required for Chromium bindgen output" >&2
+  return 2
+fi
+export YATOU_BINDGEN_EXE="${host_tools}/bin/bindgen"
+export YATOU_RUSTFMT_EXE="${rustfmt_exe}"
+export YATOU_LIBCLANG_PATH="${LIBCLANG_PATH}"
+
 if [[ "${target_libc}" == "musl" ]]; then
   musl_sysroot="${RUSTY_V8_MUSL_SYSROOT:-${TARGET_HOME:-}}"
   if [[ -z "${musl_sysroot}" ]]; then
@@ -151,5 +141,7 @@ echo "YATOU_WHEEL_TARGET=${YATOU_WHEEL_TARGET}"
 echo "RUST_TARGET=${rust_target}"
 echo "V8_FROM_SOURCE=${V8_FROM_SOURCE}"
 echo "LIBCLANG_PATH=${LIBCLANG_PATH}"
+echo "YATOU_BINDGEN_EXE=${YATOU_BINDGEN_EXE}"
+echo "YATOU_RUSTFMT_EXE=${YATOU_RUSTFMT_EXE}"
 echo "RUSTY_V8_MUSL_SYSROOT=${RUSTY_V8_MUSL_SYSROOT:-}"
 echo "NUM_JOBS=${NUM_JOBS}"

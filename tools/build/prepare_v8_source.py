@@ -45,6 +45,22 @@ RUN_BINDGEN_PATCHED = """env[\"LD_LIBRARY_PATH\"] = os.pathsep.join(
             for value in (args.ld_library_path, os.environ.get(\"LD_LIBRARY_PATH\"))
             if value
         )"""
+RUN_BINDGEN_LIBCLANG_ORIGINAL = 'env["LIBCLANG_PATH"] = args.libclang_path'
+RUN_BINDGEN_LIBCLANG_PATCHED = """env[\"LIBCLANG_PATH\"] = os.environ.get(
+            \"YATOU_LIBCLANG_PATH\", args.libclang_path
+        )"""
+RUN_BINDGEN_EXEC_ORIGINAL = (
+    "subprocess.check_call([args.bindgen_exe, *genargs], env=env)"
+)
+RUN_BINDGEN_EXEC_PATCHED = """subprocess.check_call([
+          os.environ.get(\"YATOU_BINDGEN_EXE\", args.bindgen_exe), *genargs
+      ], env=env)"""
+RUN_RUSTFMT_EXEC_ORIGINAL = (
+    "subprocess.check_call([args.rustfmt_exe, *fmtargs])"
+)
+RUN_RUSTFMT_EXEC_PATCHED = """subprocess.check_call([
+          os.environ.get(\"YATOU_RUSTFMT_EXE\", args.rustfmt_exe), *fmtargs
+      ])"""
 
 
 class PreparationError(RuntimeError):
@@ -242,14 +258,13 @@ def hydrate_chromium_rust(v8_root: pathlib.Path, cache_dir: pathlib.Path) -> pat
 
 
 def patch_run_bindgen_library_path(v8_root: pathlib.Path) -> pathlib.Path:
-    """Keep the build host C++ runtime visible to Chromium's bindgen.
+    """Make Chromium's bindgen runner accept verified native host tools.
 
     Chromium intentionally replaces ``LD_LIBRARY_PATH`` with its libclang
-    directory before launching the downloaded bindgen executable.  On
-    manylinux_2_28 that also hides the GCC toolset's newer libstdc++, causing
-    bindgen to fall back to EL8's ``/lib64/libstdc++.so.6`` and fail on
-    ``GLIBCXX_3.4.26``.  Preserve Chromium's directory at highest priority but
-    append the verified host path inherited from the build container.
+    directory and launches a downloaded bindgen executable.  That executable
+    requires a newer libstdc++ than manylinux_2_28 provides.  Preserve the
+    inherited loader path and allow the build scripts to substitute a bindgen,
+    rustfmt, and libclang compiled or installed for the actual build host.
     """
 
     path = v8_root.joinpath(*RUN_BINDGEN_PATH.parts)
@@ -258,18 +273,23 @@ def patch_run_bindgen_library_path(v8_root: pathlib.Path) -> pathlib.Path:
     except OSError as error:
         raise PreparationError(f"unable to read Chromium bindgen runner: {path}") from error
 
-    if RUN_BINDGEN_PATCHED in source:
-        return path
-    occurrences = source.count(RUN_BINDGEN_ORIGINAL)
-    if occurrences != 1:
-        raise PreparationError(
-            "Chromium bindgen runner no longer matches the pinned patch context: "
-            f"expected one assignment, found {occurrences}"
-        )
-    path.write_text(
-        source.replace(RUN_BINDGEN_ORIGINAL, RUN_BINDGEN_PATCHED),
-        encoding="utf-8",
+    replacements = (
+        (RUN_BINDGEN_ORIGINAL, RUN_BINDGEN_PATCHED),
+        (RUN_BINDGEN_LIBCLANG_ORIGINAL, RUN_BINDGEN_LIBCLANG_PATCHED),
+        (RUN_BINDGEN_EXEC_ORIGINAL, RUN_BINDGEN_EXEC_PATCHED),
+        (RUN_RUSTFMT_EXEC_ORIGINAL, RUN_RUSTFMT_EXEC_PATCHED),
     )
+    for original, patched in replacements:
+        if patched in source:
+            continue
+        occurrences = source.count(original)
+        if occurrences != 1:
+            raise PreparationError(
+                "Chromium bindgen runner no longer matches the pinned patch context: "
+                f"expected one occurrence, found {occurrences}: {original}"
+            )
+        source = source.replace(original, patched)
+    path.write_text(source, encoding="utf-8")
     return path
 
 
