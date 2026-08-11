@@ -64,8 +64,11 @@ if command -v dnf >/dev/null 2>&1; then
   fi
   gcc_runtime_dir="${gcc_toolset_root}/root/usr/lib64"
   gcc_runtime="${gcc_runtime_dir}/libstdc++.so.6"
+  # Do not use `grep -q` here.  With `set -o pipefail`, grep exits as soon as
+  # it finds the symbol and `strings` can then receive SIGPIPE, making a valid
+  # runtime look like a failed pipeline.
   if [[ ! -e "${gcc_runtime}" ]] || \
-      ! strings "${gcc_runtime}" | grep -q 'GLIBCXX_3\.4\.26'; then
+      ! strings "${gcc_runtime}" | grep 'GLIBCXX_3\.4\.26' >/dev/null; then
     echo "${gcc_runtime} does not provide GLIBCXX_3.4.26" >&2
     return 2
   fi
