@@ -106,16 +106,11 @@ if [[ ! -x "${host_tools}/bin/bindgen" ]] || \
   cargo install bindgen-cli --version 0.72.1 --locked \
     --target "${host_rust_target}" --root "${host_tools}"
 fi
-rustfmt_exe="$(command -v rustfmt || true)"
-if [[ -z "${rustfmt_exe}" ]]; then
-  echo "rustfmt is required for Chromium bindgen output" >&2
-  return 2
-fi
 export YATOU_BINDGEN_EXE="${host_tools}/bin/bindgen"
-export YATOU_RUSTFMT_EXE="${rustfmt_exe}"
-# Keep Chromium's own bundled libclang for Chromium GN bindgen actions. Its
-# command-line flags are tied to that exact clang revision; LIBCLANG_PATH above
-# remains available to Cargo build scripts outside Chromium's GN graph.
+# Keep Chromium's own bundled rustfmt and libclang for Chromium GN actions.
+# Their behavior and command-line flags are tied to that exact toolchain
+# revision; LIBCLANG_PATH above remains available to Cargo build scripts
+# outside Chromium's GN graph.
 
 if [[ "${target_libc}" == "musl" ]]; then
   musl_sysroot="${RUSTY_V8_MUSL_SYSROOT:-${TARGET_HOME:-}}"
@@ -144,6 +139,5 @@ echo "RUST_TARGET=${rust_target}"
 echo "V8_FROM_SOURCE=${V8_FROM_SOURCE}"
 echo "LIBCLANG_PATH=${LIBCLANG_PATH}"
 echo "YATOU_BINDGEN_EXE=${YATOU_BINDGEN_EXE}"
-echo "YATOU_RUSTFMT_EXE=${YATOU_RUSTFMT_EXE}"
 echo "RUSTY_V8_MUSL_SYSROOT=${RUSTY_V8_MUSL_SYSROOT:-}"
 echo "NUM_JOBS=${NUM_JOBS}"
