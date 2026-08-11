@@ -116,10 +116,19 @@ if [[ "${rust_target}" == "aarch64-unknown-linux-gnu" ]]; then
     return 2
   fi
 
-  target_sysroot="$("${cross_cc}" -print-sysroot 2>/dev/null || true)"
+  # rust-cross publishes these paths explicitly. Prefer them over GCC's
+  # -print-sysroot because crosstool-ng wrappers can report `/` even though
+  # the copied target libc lives in a nested image sysroot.
+  target_sysroot="${TARGET_SYSROOT:-}"
+  if [[ -z "${target_sysroot}" ]]; then
+    target_sysroot="$("${cross_cc}" -print-sysroot 2>/dev/null || true)"
+  fi
   target_multiarch="$("${cross_cc}" -print-multiarch 2>/dev/null || true)"
   target_include=""
   include_candidates=()
+  if [[ -n "${TARGET_C_INCLUDE_PATH:-}" ]]; then
+    include_candidates+=("${TARGET_C_INCLUDE_PATH%/}")
+  fi
   if [[ -n "${target_sysroot}" ]]; then
     include_candidates+=(
       "${target_sysroot%/}/usr/include"
