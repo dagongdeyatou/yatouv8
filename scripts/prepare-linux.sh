@@ -62,18 +62,30 @@ if command -v dnf >/dev/null 2>&1; then
     echo "a GCC toolset runtime is required for Chromium host tools" >&2
     return 2
   fi
-  gcc_runtime_dir="${gcc_toolset_root}/root/usr/lib64"
-  gcc_runtime="${gcc_runtime_dir}/libstdc++.so.6"
-  # Do not use `grep -q` here.  With `set -o pipefail`, grep exits as soon as
-  # it finds the symbol and `strings` can then receive SIGPIPE, making a valid
-  # runtime look like a failed pipeline.
-  if [[ ! -e "${gcc_runtime}" ]] || \
-      ! strings "${gcc_runtime}" | grep 'GLIBCXX_3\.4\.26' >/dev/null; then
-    echo "${gcc_runtime} does not provide GLIBCXX_3.4.26" >&2
+  # The compatibility symlink in root/usr/lib64 may resolve back to EL8's
+  # system GCC 8 runtime.  Locate the actual Toolset payload instead of
+  # trusting that symlink, then put the payload's directory on the loader path.
+  mapfile -d '' gcc_runtime_candidates < <(
+    find "${gcc_toolset_root}/root/usr" -type f \
+      -name 'libstdc++.so.6.*' -print0 2>/dev/null
+  )
+  gcc_runtime=""
+  for candidate in "${gcc_runtime_candidates[@]}"; do
+    # Avoid `grep -q`: under pipefail its early exit can SIGPIPE `strings` and
+    # turn a successful symbol match into a failed pipeline.
+    if strings "${candidate}" | grep 'GLIBCXX_3\.4\.26' >/dev/null; then
+      gcc_runtime="${candidate}"
+      break
+    fi
+  done
+  if [[ -z "${gcc_runtime}" ]]; then
+    echo "${gcc_toolset_root} does not provide a libstdc++ with GLIBCXX_3.4.26" >&2
     return 2
   fi
+  gcc_runtime_dir="$(dirname "${gcc_runtime}")"
   export PATH="${gcc_toolset_root}/root/usr/bin:${PATH}"
   export LD_LIBRARY_PATH="${gcc_runtime_dir}:${gcc_toolset_root}/root/usr/lib${LD_LIBRARY_PATH:+:${LD_LIBRARY_PATH}}"
+  echo "GCC_RUNTIME=${gcc_runtime}"
 elif command -v apt-get >/dev/null 2>&1; then
   clang_major="$(clang --version 2>/dev/null | sed -nE 's/.*clang version ([0-9]+).*/\1/p' | head -n 1 || true)"
   if [[ -z "${clang_major}" || "${clang_major}" -lt 19 ]]; then
