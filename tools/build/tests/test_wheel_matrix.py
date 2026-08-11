@@ -46,6 +46,19 @@ class WheelMatrixTests(unittest.TestCase):
             all("@sha256:" in item["build_container"] for item in matrices["linux_build"])
         )
 
+    def test_windows_builds_stay_on_visual_studio_2022(self) -> None:
+        matrices = wheel_matrix.github_matrices(wheel_matrix.load_matrix())
+        self.assertEqual(
+            {item["build_runner"] for item in matrices["windows_build"]},
+            {"windows-2022"},
+        )
+        x64_tests = [
+            item
+            for item in matrices["windows_test"]
+            if item["id"] == "windows-x86_64"
+        ]
+        self.assertEqual({item["test_runner"] for item in x64_tests}, {"windows-2022"})
+
     def test_rejects_missing_target(self) -> None:
         document = json.loads(wheel_matrix.DEFAULT_MATRIX.read_text(encoding="utf-8"))
         document["targets"].pop()

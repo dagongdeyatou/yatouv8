@@ -104,7 +104,7 @@ function Import-VisualStudioEnvironment {
         throw "Visual Studio locator not found: $vswhere"
     }
     $vswhereArguments = @(
-        '-latest', '-products', '*', '-requires',
+        '-latest', '-version', '[17.0,18.0)', '-products', '*', '-requires',
         'Microsoft.VisualStudio.Component.VC.Tools.x86.x64'
     )
     if ($Architecture -eq 'arm64') {
@@ -113,8 +113,9 @@ function Import-VisualStudioEnvironment {
     $vswhereArguments += @('-property', 'installationPath')
     $installation = (& $vswhere @vswhereArguments | Select-Object -First 1)
     if (!$installation) {
-        throw "Visual Studio C++ build tools for $Architecture were not found"
+        throw "Visual Studio 2022 C++ build tools for $Architecture were not found"
     }
+    Write-Host "VISUAL_STUDIO_2022=$installation"
     $vsDevCmd = Join-Path $installation 'Common7\Tools\VsDevCmd.bat'
     if (!(Test-Path -LiteralPath $vsDevCmd)) {
         throw "VsDevCmd.bat not found: $vsDevCmd"

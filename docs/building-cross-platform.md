@@ -38,7 +38,7 @@ python -m pip install yatouv8
 V8 源码构建包含 GN、Torque、`mksnapshot` 和代码生成器。这些工具必须能在构建机
 执行，最终静态库才按目标 ABI 编译。因此：
 
-- Windows ARM64 在 `windows-2025` x64 上用 MSVC ARM64 工具链构建，再到
+- Windows ARM64 在 `windows-2022` x64 上用 VS 2022 MSVC ARM64 工具链构建，再到
   `windows-11-arm` 原生运行；
 - Linux ARM64 和两个 musl 目标在 glibc x64 容器中构建宿主工具；
 - `RUSTY_V8_MUSL_SYSROOT` 只约束最终 musl 对象，不把宿主生成器变成 musl；

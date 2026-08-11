@@ -20,8 +20,8 @@
       "platform_tag": "win_amd64",
       "compatibility": "pypi",
       "build_mode": "native",
-      "build_runner": "windows-2025",
-      "test_runner": "windows-2025",
+      "build_runner": "windows-2022",
+      "test_runner": "windows-2022",
       "python_architecture": "x64",
       "artifact_name": "yatouv8-windows-x86-64"
     },
@@ -35,7 +35,7 @@
       "platform_tag": "win_arm64",
       "compatibility": "pypi",
       "build_mode": "cross",
-      "build_runner": "windows-2025",
+      "build_runner": "windows-2022",
       "test_runner": "windows-11-arm",
       "python_architecture": "arm64",
       "artifact_name": "yatouv8-windows-arm64"

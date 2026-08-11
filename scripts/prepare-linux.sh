@@ -90,6 +90,80 @@ export CARGO_TERM_COLOR=always
 export NUM_JOBS="${NUM_JOBS:-$(nproc)}"
 export LIBCLANG_PATH="$(dirname "${libclang}")"
 
+# Cargo's host-side bindgen inherits the Rust target but libclang does not
+# automatically discover the cross image's glibc headers.  In particular,
+# aarch64 bindgen otherwise combines /usr/include/features-time64.h with the
+# x86_64 host search path and cannot resolve bits/wordsize.h.  Discover the
+# target include directory from the installed cross compiler/sysroot and pass
+# it only to the aarch64 GNU bindgen invocation.
+if [[ "${rust_target}" == "aarch64-unknown-linux-gnu" ]]; then
+  cross_cc=""
+  for candidate in \
+    "${CC_aarch64_unknown_linux_gnu:-}" \
+    "${CC:-}" \
+    aarch64-linux-gnu-gcc \
+    aarch64-unknown-linux-gnu-gcc; do
+    if [[ -n "${candidate}" ]] && command -v "${candidate}" >/dev/null 2>&1; then
+      compiler_machine="$("${candidate}" -dumpmachine 2>/dev/null || true)"
+      if [[ "${compiler_machine}" == aarch64* ]]; then
+        cross_cc="${candidate}"
+        break
+      fi
+    fi
+  done
+  if [[ -z "${cross_cc}" ]]; then
+    echo "unable to locate the aarch64 GNU cross compiler for bindgen" >&2
+    return 2
+  fi
+
+  target_sysroot="$("${cross_cc}" -print-sysroot 2>/dev/null || true)"
+  target_multiarch="$("${cross_cc}" -print-multiarch 2>/dev/null || true)"
+  target_include=""
+  include_candidates=()
+  if [[ -n "${target_sysroot}" ]]; then
+    include_candidates+=(
+      "${target_sysroot%/}/usr/include"
+      "${target_sysroot%/}/include"
+    )
+  fi
+  if [[ -n "${target_multiarch}" ]]; then
+    include_candidates+=(
+      "/usr/${target_multiarch}/include"
+      "/usr/include/${target_multiarch}"
+    )
+  fi
+  for candidate in "${include_candidates[@]}"; do
+    if [[ -n "${candidate}" && -f "${candidate}/bits/wordsize.h" ]]; then
+      target_include="${candidate}"
+      break
+    fi
+  done
+  if [[ -z "${target_include}" ]]; then
+    while IFS= read -r wordsize_header; do
+      case "${wordsize_header}" in
+        *aarch64*|*arm64*)
+          target_include="$(dirname "$(dirname "${wordsize_header}")")"
+          break
+          ;;
+      esac
+    done < <(find /usr /opt -type f -path '*/bits/wordsize.h' -print 2>/dev/null || true)
+  fi
+  if [[ -z "${target_include}" || ! -f "${target_include}/bits/wordsize.h" ]]; then
+    echo "unable to locate aarch64 glibc headers for bindgen" >&2
+    return 2
+  fi
+
+  bindgen_args="--target=${rust_target} -isystem ${target_include}"
+  if [[ -n "${target_sysroot}" && "${target_sysroot}" != "/" && \
+        -d "${target_sysroot}" ]]; then
+    bindgen_args="${bindgen_args} --sysroot=${target_sysroot}"
+  fi
+  export BINDGEN_EXTRA_CLANG_ARGS_aarch64_unknown_linux_gnu="${bindgen_args}"
+  echo "AARCH64_BINDGEN_CC=${cross_cc}"
+  echo "AARCH64_BINDGEN_INCLUDE=${target_include}"
+  echo "BINDGEN_EXTRA_CLANG_ARGS_aarch64_unknown_linux_gnu=${bindgen_args}"
+fi
+
 # Chromium's downloaded bindgen requires GLIBCXX_3.4.26, which the EL8
 # manylinux_2_28 baseline intentionally does not provide. Build the exact
 # Chromium bindgen version with the active host Rust toolchain instead. This
