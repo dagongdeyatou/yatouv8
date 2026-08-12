@@ -119,32 +119,60 @@ jobs:
       matrix: ${{ fromJSON(needs.wheel-matrix.outputs.windows_test) }}
     steps:
       - uses: actions/checkout@v7
-      - uses: actions/setup-python@v7
+      - id: setup_python
+        if: matrix.id != 'windows-arm64' || matrix.python_version != '3.10'
+        uses: actions/setup-python@v7
         with:
           python-version: ${{ matrix.python_version }}
           architecture: ${{ matrix.python_architecture }}
+      # setup-python has no Windows ARM64 3.10 tool-cache entry. CPython did
+      # publish an official 3.10.2 ARM64 embeddable runtime, so use that
+      # digest-locked native interpreter rather than skipping this ABI test.
+      - id: setup_python_arm64_310
+        if: matrix.id == 'windows-arm64' && matrix.python_version == '3.10'
+        name: Bootstrap official CPython 3.10 ARM64 runtime
+        shell: pwsh
+        run: ./scripts/setup-python-windows-arm64.ps1
+      - name: Select and verify native test interpreter
+        shell: pwsh
+        env:
+          ACTION_PYTHON: ${{ steps.setup_python.outputs.python-path }}
+          EMBEDDED_PYTHON: ${{ steps.setup_python_arm64_310.outputs.python-path }}
+        run: |
+          $python = if ($env:EMBEDDED_PYTHON) { $env:EMBEDDED_PYTHON } else { $env:ACTION_PYTHON }
+          if (!$python -or !(Test-Path -LiteralPath $python)) {
+            throw "test Python executable not found: $python"
+          }
+          & $python -c "import platform,struct,sys; assert f'{sys.version_info.major}.{sys.version_info.minor}' == '${{ matrix.python_version }}'; assert struct.calcsize('P') * 8 == 64; print(sys.version, platform.machine())"
+          if ($LASTEXITCODE -ne 0) { throw 'native test interpreter contract failed' }
+          "YATOU_TEST_PYTHON=$python" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
       - uses: actions/download-artifact@v8
         with:
           name: ${{ matrix.artifact_name }}
           path: dist
       - name: Verify wheel before installation
-        run: >-
-          python tools/build/wheel_matrix.py verify-dist
-          --target ${{ matrix.id }} --dist dist
-          --python-version ${{ matrix.python_version }}
+        shell: pwsh
+        run: |
+          & $env:YATOU_TEST_PYTHON tools/build/wheel_matrix.py verify-dist `
+            --target '${{ matrix.id }}' --dist dist `
+            --python-version '${{ matrix.python_version }}'
+          if ($LASTEXITCODE -ne 0) { throw 'wheel verification failed' }
       - name: Install matching wheel without a compiler
-        run: >-
-          python -m pip install --disable-pip-version-check --no-input
-          --no-index --no-deps --find-links dist yatouv8==0.1.0
+        shell: pwsh
+        run: |
+          & $env:YATOU_TEST_PYTHON -m pip install --disable-pip-version-check `
+            --no-input --no-index --no-deps --find-links dist yatouv8==0.1.0
+          if ($LASTEXITCODE -ne 0) { throw 'wheel installation failed' }
       - name: Run installed-wheel tests
-        run: python -m unittest discover -s python/tests -v
+        shell: pwsh
+        run: |
+          & $env:YATOU_TEST_PYTHON -m unittest discover -s python/tests -v
+          if ($LASTEXITCODE -ne 0) { throw 'installed-wheel tests failed' }
       - name: Run native V8 smoke
-        run: >-
-          python -c "import yatouv8;
-          assert yatouv8.v8_smoke_value() == '42';
-          r = yatouv8.Runtime();
-          assert r.eval('21 * 2') == 42;
-          r.close()"
+        shell: pwsh
+        run: |
+          & $env:YATOU_TEST_PYTHON -c "import yatouv8; assert yatouv8.v8_smoke_value() == '42'; r = yatouv8.Runtime(); assert r.eval('21 * 2') == 42; r.close()"
+          if ($LASTEXITCODE -ne 0) { throw 'native V8 smoke failed' }
 
   macos-v8-wheels:
     needs: [wheel-matrix, contracts]

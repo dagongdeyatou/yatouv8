@@ -76,6 +76,13 @@ CI 和批量发布使用 `scripts/build-wheels-windows.ps1`，为一个目标架
 构建解释器。脚本先校验并准备一次目标 V8 静态资产，再复用相同 Cargo target tree
 依次链接 `cp310`–`cp314`，防止把与 Python ABI 无关的工作重复执行五次。
 
+GitHub `actions/setup-python` 没有 Windows ARM64 的 CPython 3.10 缓存项。为避免把
+`win_arm64/cp310` 只构建不运行，原生 ARM64 安装任务会通过
+`scripts/setup-python-windows-arm64.ps1` 装载 Python 官方发布的 3.10.2 ARM64
+embeddable runtime，并手动引导固定版本的 pip。两个下载项的 URL、版本和 SHA-256
+都锁定在 `tools/build/python_windows_arm64_assets.json`；该例外只用于 CI 测试，
+不会打进 yatouv8 wheel。
+
 ### macOS
 
 在对应架构 Mac 上安装 Xcode Command Line Tools、Homebrew `llvm@19`、Rust 1.97.1、
