@@ -44,9 +44,12 @@ V8 源码构建包含 GN、Torque、`mksnapshot` 和代码生成器。这些工�
 - `RUSTY_V8_MUSL_SYSROOT` 只约束最终 musl 对象，不把宿主生成器变成 musl；
 - macOS 使用对应架构 runner，避免 Rosetta/SDK 混用污染部署目标。
 
-V8 一律固定 `v8 = 150.4.0`、`V8_FROM_SOURCE=1`。`prepare_v8_source.py` 校验并
-水合固定 ICU 与 Chromium Rust vendor 输入。Linux/macOS 的 `libclang` 只供
-bindgen；V8 C++ 编译继续使用 rusty_v8 固定 revision 的 Chromium clang。
+V8 一律固定 `v8 = 150.4.0`。Linux/macOS 使用 `V8_FROM_SOURCE=1`，
+`prepare_v8_source.py` 校验并水合固定 ICU 与 Chromium Rust vendor 输入；其
+`libclang` 只供 bindgen，V8 C++ 编译继续使用 rusty_v8 固定 revision 的 Chromium
+clang。Windows 使用 rusty_v8 同版本官方 release 静态库与绑定文件，并通过
+`tools/build/rusty_v8_windows_assets.json` 固定 URL 和 SHA-256；这避免 GitHub
+Windows runner 单次源码编译超过 4 小时，同时不改变 V8 版本或 Rust API。
 
 ## 本地入口
 
@@ -68,6 +71,10 @@ Windows 脚本会通过 `VsDevCmd.bat` 分别加载 `amd64` 或 `arm64` MSVC 环
 使用固定 GN、Ninja 和 Chromium libclang。Chromium GN 的 Rust sysroot 输入路径很
 长，脚本默认把 Cargo/V8 输出放在短路径 `C:\y8t`，避免尚未归一化的 `..` 路径触发
 Win32 260 字符限制；如需改盘符，可预先设置另一个足够短的 `CARGO_TARGET_DIR`。
+
+CI 和批量发布使用 `scripts/build-wheels-windows.ps1`，为一个目标架构接收五个 x64
+构建解释器。脚本先校验并准备一次目标 V8 静态资产，再复用相同 Cargo target tree
+依次链接 `cp310`–`cp314`，防止把与 Python ABI 无关的工作重复执行五次。
 
 ### macOS
 
@@ -101,7 +108,7 @@ bash scripts/build-wheel-linux.sh musllinux-aarch64 dist
 `.github/workflows/ci.yml` 先由 `wheel-matrix` job 生成动态矩阵，再执行：
 
 1. `contracts`：Rust/Python 静态合同与单元测试；
-2. `windows-v8-wheel`：10 个 Windows 目标/ABI 构建；
+2. `windows-v8-wheel`：两个架构任务各校验一次 V8 资产，并分别生成五个 CPython ABI wheel；
 3. `windows-wheel-install`：在 x64/ARM64 原生 runner 安装和运行；
 4. `macos-v8-wheels`：两个架构各一次构建五个 ABI，并原生测试；
 5. `linux-v8-wheels`：四个 libc/架构构建；

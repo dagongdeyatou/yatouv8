@@ -5,6 +5,7 @@ param(
     [string]$MaturinPythonExecutable = "C:\ProgramData\anaconda3\python.exe",
     [ValidateSet('windows-x86_64', 'windows-arm64')]
     [string]$TargetId = 'windows-x86_64',
+    [switch]$SkipV8Build,
     [switch]$SkipTests
 )
 
@@ -40,8 +41,15 @@ $isCross = $hostTarget -ne $rustTarget
 $runTests = !$SkipTests -and !$isCross
 $maturinInterpreter = if ($isCross) { "python$pythonVersion" } else { $python }
 
-& .\scripts\build-v8-source.ps1 -Profile release -Target $rustTarget | Out-Host
-if ($LASTEXITCODE -ne 0) { throw 'V8 source build failed' }
+if ($SkipV8Build) {
+    if ($env:YATOU_V8_SOURCE_PREPARED_TARGET -ne $rustTarget) {
+        throw "V8 source build for $rustTarget has not been prepared in this process"
+    }
+}
+else {
+    & .\scripts\build-v8-source.ps1 -Profile release -Target $rustTarget | Out-Host
+    if ($LASTEXITCODE -ne 0) { throw 'V8 source build failed' }
+}
 
 New-Item -ItemType Directory -Path $OutputDirectory -Force | Out-Null
 $previousCross = $env:PYO3_CROSS

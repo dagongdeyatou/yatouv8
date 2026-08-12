@@ -50,7 +50,7 @@ jobs:
   windows-v8-wheel:
     needs: [wheel-matrix, contracts]
     runs-on: ${{ matrix.build_runner }}
-    timeout-minutes: 240
+    timeout-minutes: 360
     strategy:
       fail-fast: false
       matrix: ${{ fromJSON(needs.wheel-matrix.outputs.windows_build) }}
@@ -59,22 +59,54 @@ jobs:
       - uses: dtolnay/rust-toolchain@1.97.1
         with:
           targets: ${{ matrix.rust_target }}
-      - uses: actions/setup-python@v7
+      # Keep all five x64 build interpreters available. The exact locked
+      # rusty_v8 target asset is verified once; only the PyO3 ABI link repeats.
+      - id: py310
+        uses: actions/setup-python@v7
         with:
-          python-version: ${{ matrix.python_version }}
+          python-version: "3.10"
           architecture: x64
-      - run: python -m pip install maturin==1.14.1 websocket-client==1.9.0
-      - name: Build ${{ matrix.id }} CPython ${{ matrix.python_version }} wheel
+      - id: py311
+        uses: actions/setup-python@v7
+        with:
+          python-version: "3.11"
+          architecture: x64
+      - id: py312
+        uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+          architecture: x64
+      - id: py313
+        uses: actions/setup-python@v7
+        with:
+          python-version: "3.13"
+          architecture: x64
+      - id: py314
+        uses: actions/setup-python@v7
+        with:
+          python-version: "3.14"
+          architecture: x64
+      - shell: pwsh
+        run: >-
+          & '${{ steps.py313.outputs.python-path }}' -m pip install
+          maturin==1.14.1 websocket-client==1.9.0
+      - name: Build ${{ matrix.id }} CPython 3.10-3.14 wheels
         shell: pwsh
         run: |
-          $python = (Get-Command python.exe).Source
-          ./scripts/build-wheel.ps1 `
+          $interpreters = @(
+            '${{ steps.py310.outputs.python-path }}'
+            '${{ steps.py311.outputs.python-path }}'
+            '${{ steps.py312.outputs.python-path }}'
+            '${{ steps.py313.outputs.python-path }}'
+            '${{ steps.py314.outputs.python-path }}'
+          )
+          ./scripts/build-wheels-windows.ps1 `
             -TargetId '${{ matrix.id }}' `
-            -PythonExecutable $python `
-            -MaturinPythonExecutable $python
+            -PythonExecutables $interpreters `
+            -MaturinPythonExecutable '${{ steps.py313.outputs.python-path }}'
       - uses: actions/upload-artifact@v7
         with:
-          name: ${{ matrix.wheel_artifact_name }}
+          name: ${{ matrix.artifact_name }}
           path: dist/*.whl
           if-no-files-found: error
 
@@ -93,7 +125,7 @@ jobs:
           architecture: ${{ matrix.python_architecture }}
       - uses: actions/download-artifact@v8
         with:
-          name: ${{ matrix.wheel_artifact_name }}
+          name: ${{ matrix.artifact_name }}
           path: dist
       - name: Verify wheel before installation
         run: >-

@@ -1,0 +1,26 @@
+{
+  "schema": "yatouv8.rusty-v8-windows-assets.v1",
+  "version": "150.4.0",
+  "targets": {
+    "x86_64-pc-windows-msvc": {
+      "archive": {
+        "url": "https://github.com/denoland/rusty_v8/releases/download/v150.4.0/rusty_v8_release_x86_64-pc-windows-msvc.lib.gz",
+        "sha256": "571bf6a028576ac1413c8a942383f637f91e94b0c964bbeefff8a098637aaa40"
+      },
+      "binding": {
+        "url": "https://github.com/denoland/rusty_v8/releases/download/v150.4.0/src_binding_release_x86_64-pc-windows-msvc.rs",
+        "sha256": "574c7abef53a0f065f615cb0c9e2f4041d22f21da3b7d94bca45ca3147750e58"
+      }
+    },
+    "aarch64-pc-windows-msvc": {
+      "archive": {
+        "url": "https://github.com/denoland/rusty_v8/releases/download/v150.4.0/rusty_v8_release_aarch64-pc-windows-msvc.lib.gz",
+        "sha256": "ce9f2e4321e0dd4bc64882b6daefc028863608ed934e387a98ca384f1f7923f8"
+      },
+      "binding": {
+        "url": "https://github.com/denoland/rusty_v8/releases/download/v150.4.0/src_binding_release_aarch64-pc-windows-msvc.rs",
+        "sha256": "574c7abef53a0f065f615cb0c9e2f4041d22f21da3b7d94bca45ca3147750e58"
+      }
+    }
+  }
+}

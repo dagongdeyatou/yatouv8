@@ -37,13 +37,21 @@ class WheelMatrixTests(unittest.TestCase):
 
     def test_github_matrices_cover_every_combination(self) -> None:
         matrices = wheel_matrix.github_matrices(wheel_matrix.load_matrix())
-        self.assertEqual(len(matrices["windows_build"]), 10)
+        self.assertEqual(len(matrices["windows_build"]), 2)
         self.assertEqual(len(matrices["windows_test"]), 10)
         self.assertEqual(len(matrices["macos_build"]), 2)
         self.assertEqual(len(matrices["linux_build"]), 4)
         self.assertEqual(len(matrices["linux_test"]), 20)
         self.assertTrue(
             all("@sha256:" in item["build_container"] for item in matrices["linux_build"])
+        )
+        self.assertEqual(
+            {item["python_versions"] for item in matrices["windows_build"]},
+            {"3.10 3.11 3.12 3.13 3.14"},
+        )
+        self.assertEqual(
+            {item["artifact_name"] for item in matrices["windows_build"]},
+            {"yatouv8-windows-x86-64", "yatouv8-windows-arm64"},
         )
 
     def test_windows_builds_stay_on_visual_studio_2022(self) -> None:

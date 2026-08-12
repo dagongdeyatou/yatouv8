@@ -141,14 +141,13 @@ def github_matrices(document: dict[str, Any]) -> dict[str, list[dict[str, Any]]]
     for target in document["targets"]:
         base = _base_entry(target)
         if target["family"] == "windows":
+            windows_build.append({**base, "python_versions": " ".join(versions)})
             for version in versions:
                 entry = {
                     **base,
                     "python_version": version,
                     "python_tag": python_tag(version),
-                    "wheel_artifact_name": f"{target['artifact_name']}-py{version}",
                 }
-                windows_build.append(entry)
                 windows_test.append(entry)
         elif target["family"] == "macos":
             macos_build.append({**base, "python_versions": " ".join(versions)})
