@@ -142,3 +142,12 @@ Maturin 版本，防止 `latest` 静默改变产物。
 
 在上述原生流水线实际产生绿色证据前，不能把 Windows 本机的静态检查写成 macOS、
 ARM64 或 musl 的验收结论。
+
+## PyPI 发布
+
+`.github/workflows/release.yml` 只接受与项目版本完全一致的 `vX.Y.Z` 标签。它先调用
+完整 CI 工作流重新构建并原生安装测试 40 个 wheel，再把 8 个平台 artifact 合并，
+通过 `tools/release/verify_release_set.py` 验证目标、Python ABI、原生架构、许可证和
+精确文件数量。只有该门禁成功后，最小权限的 `publish` 任务才能进入 GitHub
+`pypi` Environment，并使用 PyPI Trusted Publisher 的短期 OIDC 凭据上传。仓库
+不保存 PyPI 密码或长期 API Token，Trusted Publishing 默认同时生成数字证明。

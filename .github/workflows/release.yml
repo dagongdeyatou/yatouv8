@@ -1,0 +1,91 @@
+name: release
+
+on:
+  push:
+    tags:
+      - "v[0-9]+.[0-9]+.[0-9]+"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  # Build and install-test all 40 wheels in the established CI workflow. The
+  # PyPI OIDC token is deliberately unavailable to every job in this stage.
+  build-and-test:
+    name: Build and test release wheels
+    uses: ./.github/workflows/ci.yml
+    permissions:
+      contents: read
+
+  assemble:
+    name: Assemble and verify 40-wheel release
+    needs: build-and-test
+    runs-on: ubuntu-24.04
+    permissions:
+      actions: read
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7
+        with:
+          python-version: "3.13"
+      - name: Verify tag equals project version
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          python tools/release/verify_release_set.py verify-tag \
+            --tag "${GITHUB_REF_NAME}"
+      - name: Download every platform artifact from this release run
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+        with:
+          pattern: yatouv8-*
+          path: release-artifacts
+          merge-multiple: true
+      - name: Verify exact 40-wheel release set
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          mkdir -p dist release-evidence
+          find release-artifacts -type f -name '*.whl' -exec cp '{}' dist/ \;
+          python tools/release/verify_release_set.py verify-dist \
+            --dist dist --output release-evidence/release-set.json
+      - name: Upload publishable release set
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: yatouv8-pypi-release
+          path: dist/*.whl
+          if-no-files-found: error
+          retention-days: 30
+      - name: Upload release verification evidence
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: yatouv8-release-evidence
+          path: release-evidence/release-set.json
+          if-no-files-found: error
+          retention-days: 30
+
+  publish:
+    name: Publish verified wheels to PyPI
+    needs: assemble
+    runs-on: ubuntu-24.04
+    environment:
+      name: pypi
+      url: https://pypi.org/project/yatouv8/
+    permissions:
+      id-token: write
+    steps:
+      # Keep this credential-bearing job minimal: retrieve only the already
+      # verified wheel set, then invoke PyPA's Trusted Publishing action.
+      - name: Download verified release set
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+        with:
+          name: yatouv8-pypi-release
+          path: dist
+      - name: Publish to PyPI with attestations
+        uses: pypa/gh-action-pypi-publish@dc37677b2e1c63e2034f94d8a5b11f265b73ba33 # release/v1
+        with:
+          packages-dir: dist

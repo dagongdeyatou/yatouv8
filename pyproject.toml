@@ -5,7 +5,7 @@ build-backend = "maturin"
 [project]
 name = "yatouv8"
 version = "0.1.0"
-description = "Evidence-driven Chrome-conformant V8 host"
+description = "High-performance Python V8 host with browser-compatible BOM, DOM, and CSSOM APIs"
 readme = "README.md"
 requires-python = ">=3.10,<3.15"
 license = "Apache-2.0"
@@ -23,6 +23,11 @@ classifiers = [
     "Programming Language :: Python :: 3.14",
     "Programming Language :: Rust",
 ]
+
+[project.urls]
+Homepage = "https://github.com/dagongdeyatou/yatouv8"
+Repository = "https://github.com/dagongdeyatou/yatouv8"
+Issues = "https://github.com/dagongdeyatou/yatouv8/issues"
 
 [tool.maturin]
 manifest-path = "crates/yatou-py/Cargo.toml"
