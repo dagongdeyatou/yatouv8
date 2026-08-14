@@ -36,6 +36,15 @@ Python 进程，在可控环境中执行普通脚本、动态 `eval`、网页 Bu
 
 ## 快速开始
 
+### 安装
+
+`yatouv8` 已发布到 [PyPI](https://pypi.org/project/yatouv8/)，支持 CPython
+3.10–3.14，可直接安装：
+
+```console
+python -m pip install yatouv8
+```
+
 ### 直接执行 JavaScript
 
 ```python
@@ -196,15 +205,9 @@ next_response = requests.get(
 `ChallengeBundle` 包含完整 Cookie、下一跳 URL、请求头和执行统计；调用者不必持续
 持有原来的 Session 对象。
 
-## 安装与构建
+## 本地构建
 
-项目包名为 `yatouv8`，支持 CPython 3.10–3.14。正式发布到 PyPI 后可直接安装：
-
-```console
-python -m pip install yatouv8
-```
-
-在当前源码仓库中，可以安装已经构建好的匹配 wheel：
+如需开发或调试原生扩展，可以安装当前源码仓库中已经构建好的匹配 wheel：
 
 ```console
 python -m pip install dist/yatouv8-0.1.0-cp313-cp313-win_amd64.whl
@@ -281,8 +284,7 @@ tools/
 - `getComputedStyle()` 使用可配置的固定返回策略，不实现布局计算；
 - 离线 Runtime 的 `fetch()` 只读取显式注入资源，不自动访问真实网络；
 - 默认浏览器行为 profile 为 Windows 11 + Chrome 150；
-- 跨平台原生发布矩阵已经实现，最终可发布性以各目标 runner 生成并安装 wheel 的
-  原生 CI 证据为准。
+- 跨平台原生发布矩阵已通过各目标 runner 的构建、安装与运行验证。
 
 ## 验证
 
@@ -315,17 +317,15 @@ yatouv8 V8 smoke: {"engine":"v8","answer":42,"traceSpine":false}
 - [Runtime 与 Python SDK](docs/evidence/m7-runtime-python.md)
 - [Host conformance](docs/evidence/m8-host-conformance.md)
 - [发布与终态门禁](docs/evidence/m10-release.md)
-- [参考项目与固定版本](docs/references.yaml)
 
 ## 设计原则
 
 1. Chrome 实测行为是浏览器兼容层的规范来源；
-2. `iv8`、`ming_iv8_rs` 和 STPyV8 仅作为行为或实现参考，不作为核心依赖；
+2. 核心运行时与浏览器兼容层保持独立实现和可验证演进；
 3. 新接口需要 Chrome evidence、差分测试和 Manifest 记录；
 4. 生成器负责大规模结构面，原生 handler 负责 DOM、CSSOM、Clock 等行为语义；
 5. Trace 输出是诊断数据，不能替代可复现测试与最终运行结果。
 
 ## License
 
-Apache License 2.0。参考项目的源码与发布物保留各自许可证，详见
-[NOTICE](NOTICE) 和 [references.yaml](docs/references.yaml)。
+Apache License 2.0。第三方组件保留各自许可证，详见 [NOTICE](NOTICE)。
