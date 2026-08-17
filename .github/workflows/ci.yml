@@ -40,7 +40,7 @@ jobs:
     runs-on: windows-2025
     steps:
       - uses: actions/checkout@v7
-      - uses: dtolnay/rust-toolchain@1.97.1
+      - uses: dtolnay/rust-toolchain@1.100.0
         with:
           components: rustfmt, clippy
       - uses: actions/setup-python@v7
@@ -59,7 +59,7 @@ jobs:
       matrix: ${{ fromJSON(needs.wheel-matrix.outputs.windows_build) }}
     steps:
       - uses: actions/checkout@v7
-      - uses: dtolnay/rust-toolchain@1.97.1
+      - uses: dtolnay/rust-toolchain@1.100.0
         with:
           targets: ${{ matrix.rust_target }}
       # Keep all five x64 build interpreters available. The exact locked
@@ -186,7 +186,7 @@ jobs:
       matrix: ${{ fromJSON(needs.wheel-matrix.outputs.macos_build) }}
     steps:
       - uses: actions/checkout@v7
-      - uses: dtolnay/rust-toolchain@1.97.1
+      - uses: dtolnay/rust-toolchain@1.100.0
         with:
           targets: ${{ matrix.rust_target }}
       # setup-python accepts one runtime per invocation.  Keep all five tool
