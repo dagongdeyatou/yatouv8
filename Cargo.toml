@@ -22,7 +22,7 @@ serde = { version = "=1.0.229", features = ["derive"] }
 serde_json = { version = "=1.0.151", features = ["float_roundtrip"] }
 sha2 = "=0.10.9"
 thiserror = "=2.0.19"
-v8 = "=150.4.0"
+v8 = "=152.1.0"
 
 [workspace.lints.rust]
 unsafe_code = "deny"
