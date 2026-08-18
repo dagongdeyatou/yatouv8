@@ -69,7 +69,7 @@ finally {
     $env:PYO3_CROSS_PYTHON_VERSION = $previousCrossVersion
 }
 
-$wheel = Get-ChildItem -LiteralPath $OutputDirectory -Filter 'yatouv8-0.1.0-*.whl' |
+$wheel = Get-ChildItem -LiteralPath $OutputDirectory -Filter 'yatouv8-0.1.1-*.whl' |
     Where-Object Name -Like "*-$pythonTag-$pythonTag-$platformTag.whl" |
     Sort-Object LastWriteTime -Descending | Select-Object -First 1
 if (!$wheel) { throw "yatouv8 $pythonTag $platformTag wheel was not created" }

@@ -44,26 +44,26 @@ class VerifyReleaseSetTests(unittest.TestCase):
             for version in matrix["python_versions"]:
                 tag = release_set.wheel_matrix.python_tag(version)
                 filename = (
-                    f"yatouv8-0.1.0-{tag}-{tag}-{target['platform_tag']}.whl"
+                    f"yatouv8-0.1.1-{tag}-{tag}-{target['platform_tag']}.whl"
                 )
                 with zipfile.ZipFile(root / filename, "w") as archive:
                     archive.writestr(native_name, native)
                     archive.writestr(
-                        "yatouv8-0.1.0.dist-info/licenses/LICENSE", "license"
+                        "yatouv8-0.1.1.dist-info/licenses/LICENSE", "license"
                     )
                     archive.writestr(
-                        "yatouv8-0.1.0.dist-info/licenses/NOTICE", "notice"
+                        "yatouv8-0.1.1.dist-info/licenses/NOTICE", "notice"
                     )
                     archive.writestr(
-                        "yatouv8-0.1.0.dist-info/WHEEL",
+                        "yatouv8-0.1.1.dist-info/WHEEL",
                         f"Wheel-Version: 1.0\nTag: {tag}-{tag}-{target['platform_tag']}\n",
                     )
 
     def test_tag_must_match_all_version_declarations(self) -> None:
-        report = release_set.verify_tag("v0.1.0")
+        report = release_set.verify_tag("v0.1.1")
         self.assertTrue(report["accepted"])
         with self.assertRaisesRegex(release_set.ReleaseSetError, "must equal"):
-            release_set.verify_tag("v0.1.1")
+            release_set.verify_tag("v0.1.0")
 
     def test_complete_release_contains_exactly_40_wheels(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
@@ -77,7 +77,7 @@ class VerifyReleaseSetTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temporary:
             root = pathlib.Path(temporary)
             self._complete_dist(root)
-            (root / "other-0.1.0-py3-none-any.whl").write_bytes(b"not a wheel")
+            (root / "other-0.1.1-py3-none-any.whl").write_bytes(b"not a wheel")
             with self.assertRaisesRegex(release_set.ReleaseSetError, "exactly 40"):
                 release_set.verify_dist(root)
 

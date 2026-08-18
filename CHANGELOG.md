@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.1.1 - 2026-08-18
+
+- Aligned browser-host reflection semantics, callable identities, and descriptor
+  ownership with the current Chrome/Google VM execution path.
+- Replaced synthetic timing assumptions with request-coupled navigation timing
+  and a monotonic, Chrome-compatible performance clock.
+- Added the high-level `solve_with_yatouv8` challenge handoff, coherent browser
+  headers, and domain-correct cookie application for redirected Google origins.
+- Verified the complete SG_SS flow through a live curl_cffi session: challenge
+  execution, `sei` navigation, HTTP 200 result DOM, and one-shot token consumption.
+
 ## 0.1.0 - 2026-08-07
 
 - Completed the evidence-driven M0–M10 architecture and conformance pipeline.

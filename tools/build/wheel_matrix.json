@@ -1,7 +1,7 @@
 {
   "schema": "yatouv8.wheel-matrix.v1",
   "package": "yatouv8",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "python_versions": [
     "3.10",
     "3.11",

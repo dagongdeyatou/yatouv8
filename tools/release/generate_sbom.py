@@ -58,7 +58,7 @@ def generate(metadata: dict[str, Any]) -> dict[str, Any]:
         "version": 1,
         "metadata": {
             "tools": {"components": [{"type": "application", "name": "yatouv8-sbom-generator", "version": "1"}]},
-            "component": {"type": "application", "name": "yatouv8", "version": "0.1.0"},
+            "component": {"type": "application", "name": "yatouv8", "version": "0.1.1"},
         },
         "components": components,
         "dependencies": dependencies,

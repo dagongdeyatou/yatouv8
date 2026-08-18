@@ -4,7 +4,7 @@ build-backend = "maturin"
 
 [project]
 name = "yatouv8"
-version = "0.1.0"
+version = "0.1.1"
 description = "High-performance Python V8 host with browser-compatible BOM, DOM, and CSSOM APIs"
 readme = "README.md"
 requires-python = ">=3.10,<3.15"

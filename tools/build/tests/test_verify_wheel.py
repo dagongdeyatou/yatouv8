@@ -30,16 +30,16 @@ class VerifyWheelTests(unittest.TestCase):
         *,
         native: bytes | None = None,
     ) -> pathlib.Path:
-        wheel = root / f"yatouv8-0.1.0-cp310-cp310-{platform}.whl"
+        wheel = root / f"yatouv8-0.1.1-cp310-cp310-{platform}.whl"
         with zipfile.ZipFile(wheel, "w") as archive:
             archive.writestr(
                 "yatouv8/_native.so",
                 native if native is not None else self._elf(62),
             )
-            archive.writestr("yatouv8-0.1.0.dist-info/licenses/LICENSE", "license")
-            archive.writestr("yatouv8-0.1.0.dist-info/licenses/NOTICE", "notice")
+            archive.writestr("yatouv8-0.1.1.dist-info/licenses/LICENSE", "license")
+            archive.writestr("yatouv8-0.1.1.dist-info/licenses/NOTICE", "notice")
             archive.writestr(
-                "yatouv8-0.1.0.dist-info/WHEEL",
+                "yatouv8-0.1.1.dist-info/WHEEL",
                 f"Wheel-Version: 1.0\nTag: cp310-cp310-{platform}\n",
             )
         return wheel

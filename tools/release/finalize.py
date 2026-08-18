@@ -93,7 +93,7 @@ def finalize(args: argparse.Namespace) -> pathlib.Path:
         "schema_version": 1,
         "milestone": "M10",
         "status": "terminal_complete",
-        "version": "0.1.0",
+        "version": "0.1.1",
         "run_id": run_id,
         "completed_at": dt.datetime.now(dt.UTC).isoformat().replace("+00:00", "Z"),
         "predicates": predicates,

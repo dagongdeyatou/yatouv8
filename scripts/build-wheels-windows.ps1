@@ -57,7 +57,7 @@ if (!$env:RUSTFLAGS -or !$env:RUSTFLAGS.Contains($crtStaticFlag)) {
 }
 
 New-Item -ItemType Directory -Path $OutputDirectory -Force | Out-Null
-Get-ChildItem -LiteralPath $OutputDirectory -Filter 'yatouv8-0.1.0-*.whl' |
+Get-ChildItem -LiteralPath $OutputDirectory -Filter 'yatouv8-0.1.1-*.whl' |
     Where-Object Name -Like "*-$platformTag.whl" |
     Remove-Item -Force
 
@@ -106,7 +106,7 @@ finally {
     --target $TargetId --dist $OutputDirectory | Out-Host
 if ($LASTEXITCODE -ne 0) { throw 'complete wheel-set verification failed' }
 
-$wheels = Get-ChildItem -LiteralPath $OutputDirectory -Filter 'yatouv8-0.1.0-*.whl' |
+$wheels = Get-ChildItem -LiteralPath $OutputDirectory -Filter 'yatouv8-0.1.1-*.whl' |
     Where-Object Name -Like "*-$platformTag.whl" |
     Sort-Object Name
 if ($wheels.Count -ne 5) {

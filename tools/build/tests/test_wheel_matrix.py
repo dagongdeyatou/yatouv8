@@ -76,13 +76,13 @@ class WheelMatrixTests(unittest.TestCase):
     def test_verify_dist_uses_target_platform_and_python_tag(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             dist = pathlib.Path(temporary)
-            wheel = dist / "yatouv8-0.1.0-cp310-cp310-win_arm64.whl"
+            wheel = dist / "yatouv8-0.1.1-cp310-cp310-win_arm64.whl"
             with zipfile.ZipFile(wheel, "w") as archive:
                 archive.writestr("yatouv8/_native.pyd", self._pe(0xAA64))
-                archive.writestr("yatouv8-0.1.0.dist-info/licenses/LICENSE", "license")
-                archive.writestr("yatouv8-0.1.0.dist-info/licenses/NOTICE", "notice")
+                archive.writestr("yatouv8-0.1.1.dist-info/licenses/LICENSE", "license")
+                archive.writestr("yatouv8-0.1.1.dist-info/licenses/NOTICE", "notice")
                 archive.writestr(
-                    "yatouv8-0.1.0.dist-info/WHEEL",
+                    "yatouv8-0.1.1.dist-info/WHEEL",
                     "Wheel-Version: 1.0\nTag: cp310-cp310-win_arm64\n",
                 )
             report = wheel_matrix.verify_dist(
