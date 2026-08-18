@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.1.2 - 2026-08-19
+
+- Added bounded retries for transient V8 and ICU source-download failures in
+  cross-platform release builds.
+- Preserved checksum verification and permanent-error fail-fast behavior across
+  the complete 40-wheel release matrix.
+
 ## 0.1.1 - 2026-08-18
 
 - Aligned browser-host reflection semantics, callable identities, and descriptor

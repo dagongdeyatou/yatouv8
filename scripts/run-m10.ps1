@@ -29,8 +29,8 @@ try {
     & .\scripts\run-m9.ps1
     & .\scripts\build-wheel.ps1
 
-    $wheel = Get-ChildItem dist -Filter 'yatouv8-0.1.1-*.whl' | Sort LastWriteTime -Desc | Select -First 1
-    $sbom = Join-Path $temporary 'yatouv8-0.1.1.cdx.json'
+    $wheel = Get-ChildItem dist -Filter 'yatouv8-0.1.2-*.whl' | Sort LastWriteTime -Desc | Select -First 1
+    $sbom = Join-Path $temporary 'yatouv8-0.1.2.cdx.json'
     $audit = Join-Path $temporary 'm10.release-audit.json'
     & $python tools\release\generate_sbom.py --cargo $cargo --output $sbom
     if ($LASTEXITCODE -ne 0) { throw 'SBOM generation failed' }

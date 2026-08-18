@@ -61,7 +61,7 @@ for index in "${!versions[@]}"; do
   version="${versions[$index]}"
   tag="cp${version//./}"
   wheel="$(find "${output_dir}" -maxdepth 1 -type f \
-    -name "yatouv8-0.1.1-${tag}-${tag}-*${platform_tag}.whl" \
+    -name "yatouv8-0.1.2-${tag}-${tag}-*${platform_tag}.whl" \
     -print -quit)"
   [[ -n "${wheel}" ]] || {
     echo "missing ${target_id} ${tag} wheel" >&2

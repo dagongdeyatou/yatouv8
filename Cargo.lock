@@ -991,7 +991,7 @@ checksum = "1ffae5123b2d3fc086436f8834ae3ab053a283cfac8fe0a0b8eaae044768a4c4"
 
 [[package]]
 name = "yatou-core"
-version = "0.1.1"
+version = "0.1.2"
 dependencies = [
  "base64",
  "serde",
@@ -1005,7 +1005,7 @@ dependencies = [
 
 [[package]]
 name = "yatou-harness"
-version = "0.1.1"
+version = "0.1.2"
 dependencies = [
  "serde",
  "serde_json",
@@ -1014,7 +1014,7 @@ dependencies = [
 
 [[package]]
 name = "yatou-py"
-version = "0.1.1"
+version = "0.1.2"
 dependencies = [
  "pyo3",
  "serde_json",
@@ -1023,7 +1023,7 @@ dependencies = [
 
 [[package]]
 name = "yatou-schema"
-version = "0.1.1"
+version = "0.1.2"
 dependencies = [
  "serde",
  "serde_json",
@@ -1032,7 +1032,7 @@ dependencies = [
 
 [[package]]
 name = "yatou-surface"
-version = "0.1.1"
+version = "0.1.2"
 dependencies = [
  "serde",
  "serde_json",

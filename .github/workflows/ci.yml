@@ -164,7 +164,7 @@ jobs:
         shell: pwsh
         run: |
           & $env:YATOU_TEST_PYTHON -m pip install --disable-pip-version-check `
-            --no-input --no-index --no-deps --find-links dist yatouv8==0.1.1
+            --no-input --no-index --no-deps --find-links dist yatouv8==0.1.2
           if ($LASTEXITCODE -ne 0) { throw 'wheel installation failed' }
       - name: Run installed-wheel tests
         shell: pwsh
