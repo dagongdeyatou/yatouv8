@@ -30,10 +30,14 @@ class Response:
 
 
 class GoogleVmLiveRunnerTests(unittest.TestCase):
-    def test_headers_do_not_inherit_curl_mac_identity(self) -> None:
-        headers = runner.browser_headers(referer="https://www.google.com/")
+    def test_headers_match_selected_curl_chrome_identity(self) -> None:
+        headers = runner.browser_headers(
+            chrome_major=146,
+            referer="https://www.google.com/",
+        )
 
-        self.assertIn("Chrome/150", headers["user-agent"])
+        self.assertIn("Chrome/146", headers["user-agent"])
+        self.assertIn('"Chromium";v="146"', headers["sec-ch-ua"])
         self.assertEqual(headers["sec-ch-ua-platform"], '"Windows"')
         self.assertEqual(headers["sec-fetch-site"], "same-origin")
 

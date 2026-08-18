@@ -130,6 +130,29 @@ impl ExecutionInspector {
         };
         capture.dispatch("Debugger.enable", None)?;
         capture.dispatch("Profiler.enable", None)?;
+        capture.dispatch("Runtime.enable", None)?;
+        if let Ok(script_hash) = std::env::var("YATOU_INSPECTOR_BREAK_HASH") {
+            if !script_hash.is_empty() {
+                let line_number = std::env::var("YATOU_INSPECTOR_BREAK_LINE")
+                    .ok()
+                    .and_then(|value| value.parse::<u32>().ok())
+                    .unwrap_or(0);
+                let column_number = std::env::var("YATOU_INSPECTOR_BREAK_COLUMN")
+                    .ok()
+                    .and_then(|value| value.parse::<u32>().ok())
+                    .unwrap_or(0);
+                let condition = std::env::var("YATOU_INSPECTOR_BREAK_CONDITION").ok();
+                let mut params = json!({
+                    "lineNumber": line_number,
+                    "columnNumber": column_number,
+                    "scriptHash": script_hash,
+                });
+                if let Some(condition) = condition.filter(|value| !value.is_empty()) {
+                    params["condition"] = Value::String(condition);
+                }
+                capture.dispatch("Debugger.setBreakpointByUrl", Some(params))?;
+            }
+        }
         capture.reset_protocol_window();
         Ok(capture)
     }
@@ -218,6 +241,7 @@ impl ExecutionInspector {
             (state.notifications.clone(), state.decode_errors.clone())
         };
         let parsed = parsed_scripts(notifications);
+        let console_events = inspector_console_events(&self.state.borrow().notifications);
         let coverage_by_script = coverage_by_script(coverage);
         let mut scripts = Vec::new();
         let mut omitted_scripts = 0_u64;
@@ -268,6 +292,7 @@ impl ExecutionInspector {
             "summary": summary,
             "script_ids": captured_script_ids,
             "protocol_decode_errors": decode_errors,
+            "console_events": console_events,
             "scripts": scripts,
         })
     }
@@ -289,6 +314,26 @@ impl ExecutionInspector {
         };
         CapturedSource::new(full, error, self.config)
     }
+}
+
+fn inspector_console_events(notifications: &[Value]) -> Vec<Value> {
+    notifications
+        .iter()
+        .filter(|notification| {
+            notification.get("method").and_then(Value::as_str) == Some("Runtime.consoleAPICalled")
+        })
+        .filter_map(|notification| notification.get("params"))
+        .filter(|params| {
+            params
+                .get("args")
+                .and_then(Value::as_array)
+                .and_then(|args| args.first())
+                .and_then(|argument| argument.get("value"))
+                .and_then(Value::as_str)
+                .is_some_and(|value| value.starts_with("__YATOU_BP__"))
+        })
+        .cloned()
+        .collect()
 }
 
 struct CapturedSource {

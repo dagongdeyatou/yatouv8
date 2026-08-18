@@ -1,0 +1,2987 @@
+{
+  "schema": "yatouv8-cssom-instance-properties/v1",
+  "baseline_id": "win11-chrome150.0.7871.129-headful-secure-m2-v1",
+  "chrome_version": "150.0.7871.129",
+  "source_probe": "Reflect.ownKeys(document.createElement('div').style)",
+  "source_evidence_sha256": "3e2e74a4ced5c8759fb0265d0d7874b9db939c119bc7fe0bfb50442d06420001",
+  "property_count": 744,
+  "described_property_count": 735,
+  "entries": [
+    {
+      "name": "accentColor",
+      "described": true
+    },
+    {
+      "name": "additiveSymbols",
+      "described": true
+    },
+    {
+      "name": "alignContent",
+      "described": true
+    },
+    {
+      "name": "alignItems",
+      "described": true
+    },
+    {
+      "name": "alignSelf",
+      "described": true
+    },
+    {
+      "name": "alignmentBaseline",
+      "described": true
+    },
+    {
+      "name": "all",
+      "described": true
+    },
+    {
+      "name": "anchorName",
+      "described": true
+    },
+    {
+      "name": "anchorScope",
+      "described": true
+    },
+    {
+      "name": "animation",
+      "described": true
+    },
+    {
+      "name": "animationComposition",
+      "described": true
+    },
+    {
+      "name": "animationDelay",
+      "described": true
+    },
+    {
+      "name": "animationDirection",
+      "described": true
+    },
+    {
+      "name": "animationDuration",
+      "described": true
+    },
+    {
+      "name": "animationFillMode",
+      "described": true
+    },
+    {
+      "name": "animationIterationCount",
+      "described": true
+    },
+    {
+      "name": "animationName",
+      "described": true
+    },
+    {
+      "name": "animationPlayState",
+      "described": true
+    },
+    {
+      "name": "animationRange",
+      "described": true
+    },
+    {
+      "name": "animationRangeEnd",
+      "described": true
+    },
+    {
+      "name": "animationRangeStart",
+      "described": true
+    },
+    {
+      "name": "animationTimeline",
+      "described": true
+    },
+    {
+      "name": "animationTimingFunction",
+      "described": true
+    },
+    {
+      "name": "animationTrigger",
+      "described": true
+    },
+    {
+      "name": "appRegion",
+      "described": true
+    },
+    {
+      "name": "appearance",
+      "described": true
+    },
+    {
+      "name": "ascentOverride",
+      "described": true
+    },
+    {
+      "name": "aspectRatio",
+      "described": true
+    },
+    {
+      "name": "backdropFilter",
+      "described": true
+    },
+    {
+      "name": "backfaceVisibility",
+      "described": true
+    },
+    {
+      "name": "background",
+      "described": true
+    },
+    {
+      "name": "backgroundAttachment",
+      "described": true
+    },
+    {
+      "name": "backgroundBlendMode",
+      "described": true
+    },
+    {
+      "name": "backgroundClip",
+      "described": true
+    },
+    {
+      "name": "backgroundColor",
+      "described": true
+    },
+    {
+      "name": "backgroundImage",
+      "described": true
+    },
+    {
+      "name": "backgroundOrigin",
+      "described": true
+    },
+    {
+      "name": "backgroundPosition",
+      "described": true
+    },
+    {
+      "name": "backgroundPositionX",
+      "described": true
+    },
+    {
+      "name": "backgroundPositionY",
+      "described": true
+    },
+    {
+      "name": "backgroundRepeat",
+      "described": true
+    },
+    {
+      "name": "backgroundSize",
+      "described": true
+    },
+    {
+      "name": "basePalette",
+      "described": true
+    },
+    {
+      "name": "baselineShift",
+      "described": true
+    },
+    {
+      "name": "baselineSource",
+      "described": true
+    },
+    {
+      "name": "blockSize",
+      "described": true
+    },
+    {
+      "name": "border",
+      "described": true
+    },
+    {
+      "name": "borderBlock",
+      "described": true
+    },
+    {
+      "name": "borderBlockColor",
+      "described": true
+    },
+    {
+      "name": "borderBlockEnd",
+      "described": true
+    },
+    {
+      "name": "borderBlockEndColor",
+      "described": true
+    },
+    {
+      "name": "borderBlockEndStyle",
+      "described": true
+    },
+    {
+      "name": "borderBlockEndWidth",
+      "described": true
+    },
+    {
+      "name": "borderBlockStart",
+      "described": true
+    },
+    {
+      "name": "borderBlockStartColor",
+      "described": true
+    },
+    {
+      "name": "borderBlockStartStyle",
+      "described": true
+    },
+    {
+      "name": "borderBlockStartWidth",
+      "described": true
+    },
+    {
+      "name": "borderBlockStyle",
+      "described": true
+    },
+    {
+      "name": "borderBlockWidth",
+      "described": true
+    },
+    {
+      "name": "borderBottom",
+      "described": true
+    },
+    {
+      "name": "borderBottomColor",
+      "described": true
+    },
+    {
+      "name": "borderBottomLeftRadius",
+      "described": true
+    },
+    {
+      "name": "borderBottomRightRadius",
+      "described": true
+    },
+    {
+      "name": "borderBottomStyle",
+      "described": true
+    },
+    {
+      "name": "borderBottomWidth",
+      "described": true
+    },
+    {
+      "name": "borderCollapse",
+      "described": true
+    },
+    {
+      "name": "borderColor",
+      "described": true
+    },
+    {
+      "name": "borderEndEndRadius",
+      "described": true
+    },
+    {
+      "name": "borderEndStartRadius",
+      "described": true
+    },
+    {
+      "name": "borderImage",
+      "described": true
+    },
+    {
+      "name": "borderImageOutset",
+      "described": true
+    },
+    {
+      "name": "borderImageRepeat",
+      "described": true
+    },
+    {
+      "name": "borderImageSlice",
+      "described": true
+    },
+    {
+      "name": "borderImageSource",
+      "described": true
+    },
+    {
+      "name": "borderImageWidth",
+      "described": true
+    },
+    {
+      "name": "borderInline",
+      "described": true
+    },
+    {
+      "name": "borderInlineColor",
+      "described": true
+    },
+    {
+      "name": "borderInlineEnd",
+      "described": true
+    },
+    {
+      "name": "borderInlineEndColor",
+      "described": true
+    },
+    {
+      "name": "borderInlineEndStyle",
+      "described": true
+    },
+    {
+      "name": "borderInlineEndWidth",
+      "described": true
+    },
+    {
+      "name": "borderInlineStart",
+      "described": true
+    },
+    {
+      "name": "borderInlineStartColor",
+      "described": true
+    },
+    {
+      "name": "borderInlineStartStyle",
+      "described": true
+    },
+    {
+      "name": "borderInlineStartWidth",
+      "described": true
+    },
+    {
+      "name": "borderInlineStyle",
+      "described": true
+    },
+    {
+      "name": "borderInlineWidth",
+      "described": true
+    },
+    {
+      "name": "borderLeft",
+      "described": true
+    },
+    {
+      "name": "borderLeftColor",
+      "described": true
+    },
+    {
+      "name": "borderLeftStyle",
+      "described": true
+    },
+    {
+      "name": "borderLeftWidth",
+      "described": true
+    },
+    {
+      "name": "borderRadius",
+      "described": true
+    },
+    {
+      "name": "borderRight",
+      "described": true
+    },
+    {
+      "name": "borderRightColor",
+      "described": true
+    },
+    {
+      "name": "borderRightStyle",
+      "described": true
+    },
+    {
+      "name": "borderRightWidth",
+      "described": true
+    },
+    {
+      "name": "borderShape",
+      "described": true
+    },
+    {
+      "name": "borderSpacing",
+      "described": true
+    },
+    {
+      "name": "borderStartEndRadius",
+      "described": true
+    },
+    {
+      "name": "borderStartStartRadius",
+      "described": true
+    },
+    {
+      "name": "borderStyle",
+      "described": true
+    },
+    {
+      "name": "borderTop",
+      "described": true
+    },
+    {
+      "name": "borderTopColor",
+      "described": true
+    },
+    {
+      "name": "borderTopLeftRadius",
+      "described": true
+    },
+    {
+      "name": "borderTopRightRadius",
+      "described": true
+    },
+    {
+      "name": "borderTopStyle",
+      "described": true
+    },
+    {
+      "name": "borderTopWidth",
+      "described": true
+    },
+    {
+      "name": "borderWidth",
+      "described": true
+    },
+    {
+      "name": "bottom",
+      "described": true
+    },
+    {
+      "name": "boxDecorationBreak",
+      "described": true
+    },
+    {
+      "name": "boxShadow",
+      "described": true
+    },
+    {
+      "name": "boxSizing",
+      "described": true
+    },
+    {
+      "name": "breakAfter",
+      "described": true
+    },
+    {
+      "name": "breakBefore",
+      "described": true
+    },
+    {
+      "name": "breakInside",
+      "described": true
+    },
+    {
+      "name": "bufferedRendering",
+      "described": true
+    },
+    {
+      "name": "captionSide",
+      "described": true
+    },
+    {
+      "name": "caretAnimation",
+      "described": true
+    },
+    {
+      "name": "caretColor",
+      "described": true
+    },
+    {
+      "name": "caretShape",
+      "described": true
+    },
+    {
+      "name": "clear",
+      "described": true
+    },
+    {
+      "name": "clip",
+      "described": true
+    },
+    {
+      "name": "clipPath",
+      "described": true
+    },
+    {
+      "name": "clipRule",
+      "described": true
+    },
+    {
+      "name": "color",
+      "described": true
+    },
+    {
+      "name": "colorInterpolation",
+      "described": true
+    },
+    {
+      "name": "colorInterpolationFilters",
+      "described": true
+    },
+    {
+      "name": "colorRendering",
+      "described": true
+    },
+    {
+      "name": "colorScheme",
+      "described": true
+    },
+    {
+      "name": "columnCount",
+      "described": true
+    },
+    {
+      "name": "columnFill",
+      "described": true
+    },
+    {
+      "name": "columnGap",
+      "described": true
+    },
+    {
+      "name": "columnHeight",
+      "described": true
+    },
+    {
+      "name": "columnRule",
+      "described": true
+    },
+    {
+      "name": "columnRuleBreak",
+      "described": true
+    },
+    {
+      "name": "columnRuleColor",
+      "described": true
+    },
+    {
+      "name": "columnRuleInset",
+      "described": true
+    },
+    {
+      "name": "columnRuleInsetCap",
+      "described": true
+    },
+    {
+      "name": "columnRuleInsetCapEnd",
+      "described": true
+    },
+    {
+      "name": "columnRuleInsetCapStart",
+      "described": true
+    },
+    {
+      "name": "columnRuleInsetEnd",
+      "described": true
+    },
+    {
+      "name": "columnRuleInsetJunction",
+      "described": true
+    },
+    {
+      "name": "columnRuleInsetJunctionEnd",
+      "described": true
+    },
+    {
+      "name": "columnRuleInsetJunctionStart",
+      "described": true
+    },
+    {
+      "name": "columnRuleInsetStart",
+      "described": true
+    },
+    {
+      "name": "columnRuleStyle",
+      "described": true
+    },
+    {
+      "name": "columnRuleVisibilityItems",
+      "described": true
+    },
+    {
+      "name": "columnRuleWidth",
+      "described": true
+    },
+    {
+      "name": "columnSpan",
+      "described": true
+    },
+    {
+      "name": "columnWidth",
+      "described": true
+    },
+    {
+      "name": "columnWrap",
+      "described": true
+    },
+    {
+      "name": "columns",
+      "described": true
+    },
+    {
+      "name": "contain",
+      "described": true
+    },
+    {
+      "name": "containIntrinsicBlockSize",
+      "described": true
+    },
+    {
+      "name": "containIntrinsicHeight",
+      "described": true
+    },
+    {
+      "name": "containIntrinsicInlineSize",
+      "described": true
+    },
+    {
+      "name": "containIntrinsicSize",
+      "described": true
+    },
+    {
+      "name": "containIntrinsicWidth",
+      "described": true
+    },
+    {
+      "name": "container",
+      "described": true
+    },
+    {
+      "name": "containerName",
+      "described": true
+    },
+    {
+      "name": "containerType",
+      "described": true
+    },
+    {
+      "name": "content",
+      "described": true
+    },
+    {
+      "name": "contentVisibility",
+      "described": true
+    },
+    {
+      "name": "cornerBlockEndShape",
+      "described": true
+    },
+    {
+      "name": "cornerBlockStartShape",
+      "described": true
+    },
+    {
+      "name": "cornerBottomLeftShape",
+      "described": true
+    },
+    {
+      "name": "cornerBottomRightShape",
+      "described": true
+    },
+    {
+      "name": "cornerBottomShape",
+      "described": true
+    },
+    {
+      "name": "cornerEndEndShape",
+      "described": true
+    },
+    {
+      "name": "cornerEndStartShape",
+      "described": true
+    },
+    {
+      "name": "cornerInlineEndShape",
+      "described": true
+    },
+    {
+      "name": "cornerInlineStartShape",
+      "described": true
+    },
+    {
+      "name": "cornerLeftShape",
+      "described": true
+    },
+    {
+      "name": "cornerRightShape",
+      "described": true
+    },
+    {
+      "name": "cornerShape",
+      "described": true
+    },
+    {
+      "name": "cornerStartEndShape",
+      "described": true
+    },
+    {
+      "name": "cornerStartStartShape",
+      "described": true
+    },
+    {
+      "name": "cornerTopLeftShape",
+      "described": true
+    },
+    {
+      "name": "cornerTopRightShape",
+      "described": true
+    },
+    {
+      "name": "cornerTopShape",
+      "described": true
+    },
+    {
+      "name": "counterIncrement",
+      "described": true
+    },
+    {
+      "name": "counterReset",
+      "described": true
+    },
+    {
+      "name": "counterSet",
+      "described": true
+    },
+    {
+      "name": "cursor",
+      "described": true
+    },
+    {
+      "name": "cx",
+      "described": true
+    },
+    {
+      "name": "cy",
+      "described": true
+    },
+    {
+      "name": "d",
+      "described": true
+    },
+    {
+      "name": "descentOverride",
+      "described": true
+    },
+    {
+      "name": "direction",
+      "described": true
+    },
+    {
+      "name": "display",
+      "described": true
+    },
+    {
+      "name": "dominantBaseline",
+      "described": true
+    },
+    {
+      "name": "dynamicRangeLimit",
+      "described": true
+    },
+    {
+      "name": "emptyCells",
+      "described": true
+    },
+    {
+      "name": "epubCaptionSide",
+      "described": false
+    },
+    {
+      "name": "epubTextCombine",
+      "described": false
+    },
+    {
+      "name": "epubTextEmphasis",
+      "described": false
+    },
+    {
+      "name": "epubTextEmphasisColor",
+      "described": false
+    },
+    {
+      "name": "epubTextEmphasisStyle",
+      "described": false
+    },
+    {
+      "name": "epubTextOrientation",
+      "described": false
+    },
+    {
+      "name": "epubTextTransform",
+      "described": false
+    },
+    {
+      "name": "epubWordBreak",
+      "described": false
+    },
+    {
+      "name": "epubWritingMode",
+      "described": false
+    },
+    {
+      "name": "fallback",
+      "described": true
+    },
+    {
+      "name": "fieldSizing",
+      "described": true
+    },
+    {
+      "name": "fill",
+      "described": true
+    },
+    {
+      "name": "fillOpacity",
+      "described": true
+    },
+    {
+      "name": "fillRule",
+      "described": true
+    },
+    {
+      "name": "filter",
+      "described": true
+    },
+    {
+      "name": "flex",
+      "described": true
+    },
+    {
+      "name": "flexBasis",
+      "described": true
+    },
+    {
+      "name": "flexDirection",
+      "described": true
+    },
+    {
+      "name": "flexFlow",
+      "described": true
+    },
+    {
+      "name": "flexGrow",
+      "described": true
+    },
+    {
+      "name": "flexLineCount",
+      "described": true
+    },
+    {
+      "name": "flexShrink",
+      "described": true
+    },
+    {
+      "name": "flexWrap",
+      "described": true
+    },
+    {
+      "name": "float",
+      "described": true
+    },
+    {
+      "name": "floodColor",
+      "described": true
+    },
+    {
+      "name": "floodOpacity",
+      "described": true
+    },
+    {
+      "name": "font",
+      "described": true
+    },
+    {
+      "name": "fontDisplay",
+      "described": true
+    },
+    {
+      "name": "fontFamily",
+      "described": true
+    },
+    {
+      "name": "fontFeatureSettings",
+      "described": true
+    },
+    {
+      "name": "fontKerning",
+      "described": true
+    },
+    {
+      "name": "fontLanguageOverride",
+      "described": true
+    },
+    {
+      "name": "fontOpticalSizing",
+      "described": true
+    },
+    {
+      "name": "fontPalette",
+      "described": true
+    },
+    {
+      "name": "fontSize",
+      "described": true
+    },
+    {
+      "name": "fontSizeAdjust",
+      "described": true
+    },
+    {
+      "name": "fontStretch",
+      "described": true
+    },
+    {
+      "name": "fontStyle",
+      "described": true
+    },
+    {
+      "name": "fontSynthesis",
+      "described": true
+    },
+    {
+      "name": "fontSynthesisSmallCaps",
+      "described": true
+    },
+    {
+      "name": "fontSynthesisStyle",
+      "described": true
+    },
+    {
+      "name": "fontSynthesisWeight",
+      "described": true
+    },
+    {
+      "name": "fontVariant",
+      "described": true
+    },
+    {
+      "name": "fontVariantAlternates",
+      "described": true
+    },
+    {
+      "name": "fontVariantCaps",
+      "described": true
+    },
+    {
+      "name": "fontVariantEastAsian",
+      "described": true
+    },
+    {
+      "name": "fontVariantEmoji",
+      "described": true
+    },
+    {
+      "name": "fontVariantLigatures",
+      "described": true
+    },
+    {
+      "name": "fontVariantNumeric",
+      "described": true
+    },
+    {
+      "name": "fontVariantPosition",
+      "described": true
+    },
+    {
+      "name": "fontVariationSettings",
+      "described": true
+    },
+    {
+      "name": "fontWeight",
+      "described": true
+    },
+    {
+      "name": "forcedColorAdjust",
+      "described": true
+    },
+    {
+      "name": "gap",
+      "described": true
+    },
+    {
+      "name": "grid",
+      "described": true
+    },
+    {
+      "name": "gridArea",
+      "described": true
+    },
+    {
+      "name": "gridAutoColumns",
+      "described": true
+    },
+    {
+      "name": "gridAutoFlow",
+      "described": true
+    },
+    {
+      "name": "gridAutoRows",
+      "described": true
+    },
+    {
+      "name": "gridColumn",
+      "described": true
+    },
+    {
+      "name": "gridColumnEnd",
+      "described": true
+    },
+    {
+      "name": "gridColumnGap",
+      "described": true
+    },
+    {
+      "name": "gridColumnStart",
+      "described": true
+    },
+    {
+      "name": "gridGap",
+      "described": true
+    },
+    {
+      "name": "gridRow",
+      "described": true
+    },
+    {
+      "name": "gridRowEnd",
+      "described": true
+    },
+    {
+      "name": "gridRowGap",
+      "described": true
+    },
+    {
+      "name": "gridRowStart",
+      "described": true
+    },
+    {
+      "name": "gridTemplate",
+      "described": true
+    },
+    {
+      "name": "gridTemplateAreas",
+      "described": true
+    },
+    {
+      "name": "gridTemplateColumns",
+      "described": true
+    },
+    {
+      "name": "gridTemplateRows",
+      "described": true
+    },
+    {
+      "name": "height",
+      "described": true
+    },
+    {
+      "name": "hyphenateCharacter",
+      "described": true
+    },
+    {
+      "name": "hyphenateLimitChars",
+      "described": true
+    },
+    {
+      "name": "hyphens",
+      "described": true
+    },
+    {
+      "name": "imageOrientation",
+      "described": true
+    },
+    {
+      "name": "imageRendering",
+      "described": true
+    },
+    {
+      "name": "inherits",
+      "described": true
+    },
+    {
+      "name": "initialLetter",
+      "described": true
+    },
+    {
+      "name": "initialValue",
+      "described": true
+    },
+    {
+      "name": "inlineSize",
+      "described": true
+    },
+    {
+      "name": "inset",
+      "described": true
+    },
+    {
+      "name": "insetBlock",
+      "described": true
+    },
+    {
+      "name": "insetBlockEnd",
+      "described": true
+    },
+    {
+      "name": "insetBlockStart",
+      "described": true
+    },
+    {
+      "name": "insetInline",
+      "described": true
+    },
+    {
+      "name": "insetInlineEnd",
+      "described": true
+    },
+    {
+      "name": "insetInlineStart",
+      "described": true
+    },
+    {
+      "name": "interactivity",
+      "described": true
+    },
+    {
+      "name": "interestDelay",
+      "described": true
+    },
+    {
+      "name": "interestDelayEnd",
+      "described": true
+    },
+    {
+      "name": "interestDelayStart",
+      "described": true
+    },
+    {
+      "name": "interpolateSize",
+      "described": true
+    },
+    {
+      "name": "isolation",
+      "described": true
+    },
+    {
+      "name": "justifyContent",
+      "described": true
+    },
+    {
+      "name": "justifyItems",
+      "described": true
+    },
+    {
+      "name": "justifySelf",
+      "described": true
+    },
+    {
+      "name": "left",
+      "described": true
+    },
+    {
+      "name": "letterSpacing",
+      "described": true
+    },
+    {
+      "name": "lightingColor",
+      "described": true
+    },
+    {
+      "name": "lineBreak",
+      "described": true
+    },
+    {
+      "name": "lineGapOverride",
+      "described": true
+    },
+    {
+      "name": "lineHeight",
+      "described": true
+    },
+    {
+      "name": "listStyle",
+      "described": true
+    },
+    {
+      "name": "listStyleImage",
+      "described": true
+    },
+    {
+      "name": "listStylePosition",
+      "described": true
+    },
+    {
+      "name": "listStyleType",
+      "described": true
+    },
+    {
+      "name": "margin",
+      "described": true
+    },
+    {
+      "name": "marginBlock",
+      "described": true
+    },
+    {
+      "name": "marginBlockEnd",
+      "described": true
+    },
+    {
+      "name": "marginBlockStart",
+      "described": true
+    },
+    {
+      "name": "marginBottom",
+      "described": true
+    },
+    {
+      "name": "marginInline",
+      "described": true
+    },
+    {
+      "name": "marginInlineEnd",
+      "described": true
+    },
+    {
+      "name": "marginInlineStart",
+      "described": true
+    },
+    {
+      "name": "marginLeft",
+      "described": true
+    },
+    {
+      "name": "marginRight",
+      "described": true
+    },
+    {
+      "name": "marginTop",
+      "described": true
+    },
+    {
+      "name": "marker",
+      "described": true
+    },
+    {
+      "name": "markerEnd",
+      "described": true
+    },
+    {
+      "name": "markerMid",
+      "described": true
+    },
+    {
+      "name": "markerStart",
+      "described": true
+    },
+    {
+      "name": "mask",
+      "described": true
+    },
+    {
+      "name": "maskClip",
+      "described": true
+    },
+    {
+      "name": "maskComposite",
+      "described": true
+    },
+    {
+      "name": "maskImage",
+      "described": true
+    },
+    {
+      "name": "maskMode",
+      "described": true
+    },
+    {
+      "name": "maskOrigin",
+      "described": true
+    },
+    {
+      "name": "maskPosition",
+      "described": true
+    },
+    {
+      "name": "maskRepeat",
+      "described": true
+    },
+    {
+      "name": "maskSize",
+      "described": true
+    },
+    {
+      "name": "maskType",
+      "described": true
+    },
+    {
+      "name": "mathDepth",
+      "described": true
+    },
+    {
+      "name": "mathShift",
+      "described": true
+    },
+    {
+      "name": "mathStyle",
+      "described": true
+    },
+    {
+      "name": "maxBlockSize",
+      "described": true
+    },
+    {
+      "name": "maxHeight",
+      "described": true
+    },
+    {
+      "name": "maxInlineSize",
+      "described": true
+    },
+    {
+      "name": "maxWidth",
+      "described": true
+    },
+    {
+      "name": "minBlockSize",
+      "described": true
+    },
+    {
+      "name": "minHeight",
+      "described": true
+    },
+    {
+      "name": "minInlineSize",
+      "described": true
+    },
+    {
+      "name": "minWidth",
+      "described": true
+    },
+    {
+      "name": "mixBlendMode",
+      "described": true
+    },
+    {
+      "name": "navigation",
+      "described": true
+    },
+    {
+      "name": "negative",
+      "described": true
+    },
+    {
+      "name": "objectFit",
+      "described": true
+    },
+    {
+      "name": "objectPosition",
+      "described": true
+    },
+    {
+      "name": "objectViewBox",
+      "described": true
+    },
+    {
+      "name": "offset",
+      "described": true
+    },
+    {
+      "name": "offsetAnchor",
+      "described": true
+    },
+    {
+      "name": "offsetDistance",
+      "described": true
+    },
+    {
+      "name": "offsetPath",
+      "described": true
+    },
+    {
+      "name": "offsetPosition",
+      "described": true
+    },
+    {
+      "name": "offsetRotate",
+      "described": true
+    },
+    {
+      "name": "opacity",
+      "described": true
+    },
+    {
+      "name": "order",
+      "described": true
+    },
+    {
+      "name": "orphans",
+      "described": true
+    },
+    {
+      "name": "outline",
+      "described": true
+    },
+    {
+      "name": "outlineColor",
+      "described": true
+    },
+    {
+      "name": "outlineOffset",
+      "described": true
+    },
+    {
+      "name": "outlineStyle",
+      "described": true
+    },
+    {
+      "name": "outlineWidth",
+      "described": true
+    },
+    {
+      "name": "overflow",
+      "described": true
+    },
+    {
+      "name": "overflowAnchor",
+      "described": true
+    },
+    {
+      "name": "overflowBlock",
+      "described": true
+    },
+    {
+      "name": "overflowClipMargin",
+      "described": true
+    },
+    {
+      "name": "overflowInline",
+      "described": true
+    },
+    {
+      "name": "overflowWrap",
+      "described": true
+    },
+    {
+      "name": "overflowX",
+      "described": true
+    },
+    {
+      "name": "overflowY",
+      "described": true
+    },
+    {
+      "name": "overlay",
+      "described": true
+    },
+    {
+      "name": "overrideColors",
+      "described": true
+    },
+    {
+      "name": "overscrollBehavior",
+      "described": true
+    },
+    {
+      "name": "overscrollBehaviorBlock",
+      "described": true
+    },
+    {
+      "name": "overscrollBehaviorInline",
+      "described": true
+    },
+    {
+      "name": "overscrollBehaviorX",
+      "described": true
+    },
+    {
+      "name": "overscrollBehaviorY",
+      "described": true
+    },
+    {
+      "name": "pad",
+      "described": true
+    },
+    {
+      "name": "padding",
+      "described": true
+    },
+    {
+      "name": "paddingBlock",
+      "described": true
+    },
+    {
+      "name": "paddingBlockEnd",
+      "described": true
+    },
+    {
+      "name": "paddingBlockStart",
+      "described": true
+    },
+    {
+      "name": "paddingBottom",
+      "described": true
+    },
+    {
+      "name": "paddingInline",
+      "described": true
+    },
+    {
+      "name": "paddingInlineEnd",
+      "described": true
+    },
+    {
+      "name": "paddingInlineStart",
+      "described": true
+    },
+    {
+      "name": "paddingLeft",
+      "described": true
+    },
+    {
+      "name": "paddingRight",
+      "described": true
+    },
+    {
+      "name": "paddingTop",
+      "described": true
+    },
+    {
+      "name": "page",
+      "described": true
+    },
+    {
+      "name": "pageBreakAfter",
+      "described": true
+    },
+    {
+      "name": "pageBreakBefore",
+      "described": true
+    },
+    {
+      "name": "pageBreakInside",
+      "described": true
+    },
+    {
+      "name": "pageMarginSafety",
+      "described": true
+    },
+    {
+      "name": "pageOrientation",
+      "described": true
+    },
+    {
+      "name": "paintOrder",
+      "described": true
+    },
+    {
+      "name": "perspective",
+      "described": true
+    },
+    {
+      "name": "perspectiveOrigin",
+      "described": true
+    },
+    {
+      "name": "placeContent",
+      "described": true
+    },
+    {
+      "name": "placeItems",
+      "described": true
+    },
+    {
+      "name": "placeSelf",
+      "described": true
+    },
+    {
+      "name": "pointerEvents",
+      "described": true
+    },
+    {
+      "name": "position",
+      "described": true
+    },
+    {
+      "name": "positionAnchor",
+      "described": true
+    },
+    {
+      "name": "positionArea",
+      "described": true
+    },
+    {
+      "name": "positionTry",
+      "described": true
+    },
+    {
+      "name": "positionTryFallbacks",
+      "described": true
+    },
+    {
+      "name": "positionTryOrder",
+      "described": true
+    },
+    {
+      "name": "positionVisibility",
+      "described": true
+    },
+    {
+      "name": "prefix",
+      "described": true
+    },
+    {
+      "name": "printColorAdjust",
+      "described": true
+    },
+    {
+      "name": "quotes",
+      "described": true
+    },
+    {
+      "name": "r",
+      "described": true
+    },
+    {
+      "name": "range",
+      "described": true
+    },
+    {
+      "name": "readingFlow",
+      "described": true
+    },
+    {
+      "name": "readingOrder",
+      "described": true
+    },
+    {
+      "name": "resize",
+      "described": true
+    },
+    {
+      "name": "result",
+      "described": true
+    },
+    {
+      "name": "right",
+      "described": true
+    },
+    {
+      "name": "rotate",
+      "described": true
+    },
+    {
+      "name": "rowGap",
+      "described": true
+    },
+    {
+      "name": "rowRule",
+      "described": true
+    },
+    {
+      "name": "rowRuleBreak",
+      "described": true
+    },
+    {
+      "name": "rowRuleColor",
+      "described": true
+    },
+    {
+      "name": "rowRuleInset",
+      "described": true
+    },
+    {
+      "name": "rowRuleInsetCap",
+      "described": true
+    },
+    {
+      "name": "rowRuleInsetCapEnd",
+      "described": true
+    },
+    {
+      "name": "rowRuleInsetCapStart",
+      "described": true
+    },
+    {
+      "name": "rowRuleInsetEnd",
+      "described": true
+    },
+    {
+      "name": "rowRuleInsetJunction",
+      "described": true
+    },
+    {
+      "name": "rowRuleInsetJunctionEnd",
+      "described": true
+    },
+    {
+      "name": "rowRuleInsetJunctionStart",
+      "described": true
+    },
+    {
+      "name": "rowRuleInsetStart",
+      "described": true
+    },
+    {
+      "name": "rowRuleStyle",
+      "described": true
+    },
+    {
+      "name": "rowRuleVisibilityItems",
+      "described": true
+    },
+    {
+      "name": "rowRuleWidth",
+      "described": true
+    },
+    {
+      "name": "rubyAlign",
+      "described": true
+    },
+    {
+      "name": "rubyPosition",
+      "described": true
+    },
+    {
+      "name": "rule",
+      "described": true
+    },
+    {
+      "name": "ruleBreak",
+      "described": true
+    },
+    {
+      "name": "ruleColor",
+      "described": true
+    },
+    {
+      "name": "ruleInset",
+      "described": true
+    },
+    {
+      "name": "ruleInsetCap",
+      "described": true
+    },
+    {
+      "name": "ruleInsetEnd",
+      "described": true
+    },
+    {
+      "name": "ruleInsetJunction",
+      "described": true
+    },
+    {
+      "name": "ruleInsetStart",
+      "described": true
+    },
+    {
+      "name": "ruleOverlap",
+      "described": true
+    },
+    {
+      "name": "ruleStyle",
+      "described": true
+    },
+    {
+      "name": "ruleVisibilityItems",
+      "described": true
+    },
+    {
+      "name": "ruleWidth",
+      "described": true
+    },
+    {
+      "name": "rx",
+      "described": true
+    },
+    {
+      "name": "ry",
+      "described": true
+    },
+    {
+      "name": "scale",
+      "described": true
+    },
+    {
+      "name": "scrollBehavior",
+      "described": true
+    },
+    {
+      "name": "scrollInitialTarget",
+      "described": true
+    },
+    {
+      "name": "scrollMargin",
+      "described": true
+    },
+    {
+      "name": "scrollMarginBlock",
+      "described": true
+    },
+    {
+      "name": "scrollMarginBlockEnd",
+      "described": true
+    },
+    {
+      "name": "scrollMarginBlockStart",
+      "described": true
+    },
+    {
+      "name": "scrollMarginBottom",
+      "described": true
+    },
+    {
+      "name": "scrollMarginInline",
+      "described": true
+    },
+    {
+      "name": "scrollMarginInlineEnd",
+      "described": true
+    },
+    {
+      "name": "scrollMarginInlineStart",
+      "described": true
+    },
+    {
+      "name": "scrollMarginLeft",
+      "described": true
+    },
+    {
+      "name": "scrollMarginRight",
+      "described": true
+    },
+    {
+      "name": "scrollMarginTop",
+      "described": true
+    },
+    {
+      "name": "scrollMarkerGroup",
+      "described": true
+    },
+    {
+      "name": "scrollPadding",
+      "described": true
+    },
+    {
+      "name": "scrollPaddingBlock",
+      "described": true
+    },
+    {
+      "name": "scrollPaddingBlockEnd",
+      "described": true
+    },
+    {
+      "name": "scrollPaddingBlockStart",
+      "described": true
+    },
+    {
+      "name": "scrollPaddingBottom",
+      "described": true
+    },
+    {
+      "name": "scrollPaddingInline",
+      "described": true
+    },
+    {
+      "name": "scrollPaddingInlineEnd",
+      "described": true
+    },
+    {
+      "name": "scrollPaddingInlineStart",
+      "described": true
+    },
+    {
+      "name": "scrollPaddingLeft",
+      "described": true
+    },
+    {
+      "name": "scrollPaddingRight",
+      "described": true
+    },
+    {
+      "name": "scrollPaddingTop",
+      "described": true
+    },
+    {
+      "name": "scrollSnapAlign",
+      "described": true
+    },
+    {
+      "name": "scrollSnapStop",
+      "described": true
+    },
+    {
+      "name": "scrollSnapType",
+      "described": true
+    },
+    {
+      "name": "scrollTargetGroup",
+      "described": true
+    },
+    {
+      "name": "scrollTimeline",
+      "described": true
+    },
+    {
+      "name": "scrollTimelineAxis",
+      "described": true
+    },
+    {
+      "name": "scrollTimelineName",
+      "described": true
+    },
+    {
+      "name": "scrollbarColor",
+      "described": true
+    },
+    {
+      "name": "scrollbarGutter",
+      "described": true
+    },
+    {
+      "name": "scrollbarWidth",
+      "described": true
+    },
+    {
+      "name": "shapeImageThreshold",
+      "described": true
+    },
+    {
+      "name": "shapeMargin",
+      "described": true
+    },
+    {
+      "name": "shapeOutside",
+      "described": true
+    },
+    {
+      "name": "shapeRendering",
+      "described": true
+    },
+    {
+      "name": "size",
+      "described": true
+    },
+    {
+      "name": "sizeAdjust",
+      "described": true
+    },
+    {
+      "name": "speak",
+      "described": true
+    },
+    {
+      "name": "speakAs",
+      "described": true
+    },
+    {
+      "name": "src",
+      "described": true
+    },
+    {
+      "name": "stopColor",
+      "described": true
+    },
+    {
+      "name": "stopOpacity",
+      "described": true
+    },
+    {
+      "name": "stroke",
+      "described": true
+    },
+    {
+      "name": "strokeDasharray",
+      "described": true
+    },
+    {
+      "name": "strokeDashoffset",
+      "described": true
+    },
+    {
+      "name": "strokeLinecap",
+      "described": true
+    },
+    {
+      "name": "strokeLinejoin",
+      "described": true
+    },
+    {
+      "name": "strokeMiterlimit",
+      "described": true
+    },
+    {
+      "name": "strokeOpacity",
+      "described": true
+    },
+    {
+      "name": "strokeWidth",
+      "described": true
+    },
+    {
+      "name": "suffix",
+      "described": true
+    },
+    {
+      "name": "symbols",
+      "described": true
+    },
+    {
+      "name": "syntax",
+      "described": true
+    },
+    {
+      "name": "system",
+      "described": true
+    },
+    {
+      "name": "tabSize",
+      "described": true
+    },
+    {
+      "name": "tableLayout",
+      "described": true
+    },
+    {
+      "name": "textAlign",
+      "described": true
+    },
+    {
+      "name": "textAlignLast",
+      "described": true
+    },
+    {
+      "name": "textAnchor",
+      "described": true
+    },
+    {
+      "name": "textAutospace",
+      "described": true
+    },
+    {
+      "name": "textBox",
+      "described": true
+    },
+    {
+      "name": "textBoxEdge",
+      "described": true
+    },
+    {
+      "name": "textBoxTrim",
+      "described": true
+    },
+    {
+      "name": "textCombineUpright",
+      "described": true
+    },
+    {
+      "name": "textDecoration",
+      "described": true
+    },
+    {
+      "name": "textDecorationColor",
+      "described": true
+    },
+    {
+      "name": "textDecorationLine",
+      "described": true
+    },
+    {
+      "name": "textDecorationSkipInk",
+      "described": true
+    },
+    {
+      "name": "textDecorationStyle",
+      "described": true
+    },
+    {
+      "name": "textDecorationThickness",
+      "described": true
+    },
+    {
+      "name": "textEmphasis",
+      "described": true
+    },
+    {
+      "name": "textEmphasisColor",
+      "described": true
+    },
+    {
+      "name": "textEmphasisPosition",
+      "described": true
+    },
+    {
+      "name": "textEmphasisStyle",
+      "described": true
+    },
+    {
+      "name": "textFit",
+      "described": true
+    },
+    {
+      "name": "textIndent",
+      "described": true
+    },
+    {
+      "name": "textJustify",
+      "described": true
+    },
+    {
+      "name": "textOrientation",
+      "described": true
+    },
+    {
+      "name": "textOverflow",
+      "described": true
+    },
+    {
+      "name": "textRendering",
+      "described": true
+    },
+    {
+      "name": "textShadow",
+      "described": true
+    },
+    {
+      "name": "textSizeAdjust",
+      "described": true
+    },
+    {
+      "name": "textSpacingTrim",
+      "described": true
+    },
+    {
+      "name": "textTransform",
+      "described": true
+    },
+    {
+      "name": "textUnderlineOffset",
+      "described": true
+    },
+    {
+      "name": "textUnderlinePosition",
+      "described": true
+    },
+    {
+      "name": "textWrap",
+      "described": true
+    },
+    {
+      "name": "textWrapMode",
+      "described": true
+    },
+    {
+      "name": "textWrapStyle",
+      "described": true
+    },
+    {
+      "name": "timelineScope",
+      "described": true
+    },
+    {
+      "name": "timelineTrigger",
+      "described": true
+    },
+    {
+      "name": "timelineTriggerActivationRange",
+      "described": true
+    },
+    {
+      "name": "timelineTriggerActivationRangeEnd",
+      "described": true
+    },
+    {
+      "name": "timelineTriggerActivationRangeStart",
+      "described": true
+    },
+    {
+      "name": "timelineTriggerActiveRange",
+      "described": true
+    },
+    {
+      "name": "timelineTriggerActiveRangeEnd",
+      "described": true
+    },
+    {
+      "name": "timelineTriggerActiveRangeStart",
+      "described": true
+    },
+    {
+      "name": "timelineTriggerName",
+      "described": true
+    },
+    {
+      "name": "timelineTriggerSource",
+      "described": true
+    },
+    {
+      "name": "top",
+      "described": true
+    },
+    {
+      "name": "touchAction",
+      "described": true
+    },
+    {
+      "name": "transform",
+      "described": true
+    },
+    {
+      "name": "transformBox",
+      "described": true
+    },
+    {
+      "name": "transformOrigin",
+      "described": true
+    },
+    {
+      "name": "transformStyle",
+      "described": true
+    },
+    {
+      "name": "transition",
+      "described": true
+    },
+    {
+      "name": "transitionBehavior",
+      "described": true
+    },
+    {
+      "name": "transitionDelay",
+      "described": true
+    },
+    {
+      "name": "transitionDuration",
+      "described": true
+    },
+    {
+      "name": "transitionProperty",
+      "described": true
+    },
+    {
+      "name": "transitionTimingFunction",
+      "described": true
+    },
+    {
+      "name": "translate",
+      "described": true
+    },
+    {
+      "name": "triggerScope",
+      "described": true
+    },
+    {
+      "name": "types",
+      "described": true
+    },
+    {
+      "name": "unicodeBidi",
+      "described": true
+    },
+    {
+      "name": "unicodeRange",
+      "described": true
+    },
+    {
+      "name": "userSelect",
+      "described": true
+    },
+    {
+      "name": "vectorEffect",
+      "described": true
+    },
+    {
+      "name": "verticalAlign",
+      "described": true
+    },
+    {
+      "name": "viewTimeline",
+      "described": true
+    },
+    {
+      "name": "viewTimelineAxis",
+      "described": true
+    },
+    {
+      "name": "viewTimelineInset",
+      "described": true
+    },
+    {
+      "name": "viewTimelineName",
+      "described": true
+    },
+    {
+      "name": "viewTransitionClass",
+      "described": true
+    },
+    {
+      "name": "viewTransitionGroup",
+      "described": true
+    },
+    {
+      "name": "viewTransitionName",
+      "described": true
+    },
+    {
+      "name": "viewTransitionScope",
+      "described": true
+    },
+    {
+      "name": "visibility",
+      "described": true
+    },
+    {
+      "name": "webkitAlignContent",
+      "described": true
+    },
+    {
+      "name": "webkitAlignItems",
+      "described": true
+    },
+    {
+      "name": "webkitAlignSelf",
+      "described": true
+    },
+    {
+      "name": "webkitAnimation",
+      "described": true
+    },
+    {
+      "name": "webkitAnimationDelay",
+      "described": true
+    },
+    {
+      "name": "webkitAnimationDirection",
+      "described": true
+    },
+    {
+      "name": "webkitAnimationDuration",
+      "described": true
+    },
+    {
+      "name": "webkitAnimationFillMode",
+      "described": true
+    },
+    {
+      "name": "webkitAnimationIterationCount",
+      "described": true
+    },
+    {
+      "name": "webkitAnimationName",
+      "described": true
+    },
+    {
+      "name": "webkitAnimationPlayState",
+      "described": true
+    },
+    {
+      "name": "webkitAnimationTimingFunction",
+      "described": true
+    },
+    {
+      "name": "webkitAppRegion",
+      "described": true
+    },
+    {
+      "name": "webkitAppearance",
+      "described": true
+    },
+    {
+      "name": "webkitBackfaceVisibility",
+      "described": true
+    },
+    {
+      "name": "webkitBackgroundClip",
+      "described": true
+    },
+    {
+      "name": "webkitBackgroundOrigin",
+      "described": true
+    },
+    {
+      "name": "webkitBackgroundSize",
+      "described": true
+    },
+    {
+      "name": "webkitBorderAfter",
+      "described": true
+    },
+    {
+      "name": "webkitBorderAfterColor",
+      "described": true
+    },
+    {
+      "name": "webkitBorderAfterStyle",
+      "described": true
+    },
+    {
+      "name": "webkitBorderAfterWidth",
+      "described": true
+    },
+    {
+      "name": "webkitBorderBefore",
+      "described": true
+    },
+    {
+      "name": "webkitBorderBeforeColor",
+      "described": true
+    },
+    {
+      "name": "webkitBorderBeforeStyle",
+      "described": true
+    },
+    {
+      "name": "webkitBorderBeforeWidth",
+      "described": true
+    },
+    {
+      "name": "webkitBorderBottomLeftRadius",
+      "described": true
+    },
+    {
+      "name": "webkitBorderBottomRightRadius",
+      "described": true
+    },
+    {
+      "name": "webkitBorderEnd",
+      "described": true
+    },
+    {
+      "name": "webkitBorderEndColor",
+      "described": true
+    },
+    {
+      "name": "webkitBorderEndStyle",
+      "described": true
+    },
+    {
+      "name": "webkitBorderEndWidth",
+      "described": true
+    },
+    {
+      "name": "webkitBorderHorizontalSpacing",
+      "described": true
+    },
+    {
+      "name": "webkitBorderImage",
+      "described": true
+    },
+    {
+      "name": "webkitBorderRadius",
+      "described": true
+    },
+    {
+      "name": "webkitBorderStart",
+      "described": true
+    },
+    {
+      "name": "webkitBorderStartColor",
+      "described": true
+    },
+    {
+      "name": "webkitBorderStartStyle",
+      "described": true
+    },
+    {
+      "name": "webkitBorderStartWidth",
+      "described": true
+    },
+    {
+      "name": "webkitBorderTopLeftRadius",
+      "described": true
+    },
+    {
+      "name": "webkitBorderTopRightRadius",
+      "described": true
+    },
+    {
+      "name": "webkitBorderVerticalSpacing",
+      "described": true
+    },
+    {
+      "name": "webkitBoxAlign",
+      "described": true
+    },
+    {
+      "name": "webkitBoxDecorationBreak",
+      "described": true
+    },
+    {
+      "name": "webkitBoxDirection",
+      "described": true
+    },
+    {
+      "name": "webkitBoxFlex",
+      "described": true
+    },
+    {
+      "name": "webkitBoxOrdinalGroup",
+      "described": true
+    },
+    {
+      "name": "webkitBoxOrient",
+      "described": true
+    },
+    {
+      "name": "webkitBoxPack",
+      "described": true
+    },
+    {
+      "name": "webkitBoxReflect",
+      "described": true
+    },
+    {
+      "name": "webkitBoxShadow",
+      "described": true
+    },
+    {
+      "name": "webkitBoxSizing",
+      "described": true
+    },
+    {
+      "name": "webkitClipPath",
+      "described": true
+    },
+    {
+      "name": "webkitColumnBreakAfter",
+      "described": true
+    },
+    {
+      "name": "webkitColumnBreakBefore",
+      "described": true
+    },
+    {
+      "name": "webkitColumnBreakInside",
+      "described": true
+    },
+    {
+      "name": "webkitColumnCount",
+      "described": true
+    },
+    {
+      "name": "webkitColumnGap",
+      "described": true
+    },
+    {
+      "name": "webkitColumnRule",
+      "described": true
+    },
+    {
+      "name": "webkitColumnRuleColor",
+      "described": true
+    },
+    {
+      "name": "webkitColumnRuleStyle",
+      "described": true
+    },
+    {
+      "name": "webkitColumnRuleWidth",
+      "described": true
+    },
+    {
+      "name": "webkitColumnSpan",
+      "described": true
+    },
+    {
+      "name": "webkitColumnWidth",
+      "described": true
+    },
+    {
+      "name": "webkitColumns",
+      "described": true
+    },
+    {
+      "name": "webkitFilter",
+      "described": true
+    },
+    {
+      "name": "webkitFlex",
+      "described": true
+    },
+    {
+      "name": "webkitFlexBasis",
+      "described": true
+    },
+    {
+      "name": "webkitFlexDirection",
+      "described": true
+    },
+    {
+      "name": "webkitFlexFlow",
+      "described": true
+    },
+    {
+      "name": "webkitFlexGrow",
+      "described": true
+    },
+    {
+      "name": "webkitFlexShrink",
+      "described": true
+    },
+    {
+      "name": "webkitFlexWrap",
+      "described": true
+    },
+    {
+      "name": "webkitFontFeatureSettings",
+      "described": true
+    },
+    {
+      "name": "webkitFontSmoothing",
+      "described": true
+    },
+    {
+      "name": "webkitHyphenateCharacter",
+      "described": true
+    },
+    {
+      "name": "webkitJustifyContent",
+      "described": true
+    },
+    {
+      "name": "webkitLineBreak",
+      "described": true
+    },
+    {
+      "name": "webkitLineClamp",
+      "described": true
+    },
+    {
+      "name": "webkitLocale",
+      "described": true
+    },
+    {
+      "name": "webkitLogicalHeight",
+      "described": true
+    },
+    {
+      "name": "webkitLogicalWidth",
+      "described": true
+    },
+    {
+      "name": "webkitMarginAfter",
+      "described": true
+    },
+    {
+      "name": "webkitMarginBefore",
+      "described": true
+    },
+    {
+      "name": "webkitMarginEnd",
+      "described": true
+    },
+    {
+      "name": "webkitMarginStart",
+      "described": true
+    },
+    {
+      "name": "webkitMask",
+      "described": true
+    },
+    {
+      "name": "webkitMaskBoxImage",
+      "described": true
+    },
+    {
+      "name": "webkitMaskBoxImageOutset",
+      "described": true
+    },
+    {
+      "name": "webkitMaskBoxImageRepeat",
+      "described": true
+    },
+    {
+      "name": "webkitMaskBoxImageSlice",
+      "described": true
+    },
+    {
+      "name": "webkitMaskBoxImageSource",
+      "described": true
+    },
+    {
+      "name": "webkitMaskBoxImageWidth",
+      "described": true
+    },
+    {
+      "name": "webkitMaskClip",
+      "described": true
+    },
+    {
+      "name": "webkitMaskComposite",
+      "described": true
+    },
+    {
+      "name": "webkitMaskImage",
+      "described": true
+    },
+    {
+      "name": "webkitMaskOrigin",
+      "described": true
+    },
+    {
+      "name": "webkitMaskPosition",
+      "described": true
+    },
+    {
+      "name": "webkitMaskPositionX",
+      "described": true
+    },
+    {
+      "name": "webkitMaskPositionY",
+      "described": true
+    },
+    {
+      "name": "webkitMaskRepeat",
+      "described": true
+    },
+    {
+      "name": "webkitMaskSize",
+      "described": true
+    },
+    {
+      "name": "webkitMaxLogicalHeight",
+      "described": true
+    },
+    {
+      "name": "webkitMaxLogicalWidth",
+      "described": true
+    },
+    {
+      "name": "webkitMinLogicalHeight",
+      "described": true
+    },
+    {
+      "name": "webkitMinLogicalWidth",
+      "described": true
+    },
+    {
+      "name": "webkitOpacity",
+      "described": true
+    },
+    {
+      "name": "webkitOrder",
+      "described": true
+    },
+    {
+      "name": "webkitPaddingAfter",
+      "described": true
+    },
+    {
+      "name": "webkitPaddingBefore",
+      "described": true
+    },
+    {
+      "name": "webkitPaddingEnd",
+      "described": true
+    },
+    {
+      "name": "webkitPaddingStart",
+      "described": true
+    },
+    {
+      "name": "webkitPerspective",
+      "described": true
+    },
+    {
+      "name": "webkitPerspectiveOrigin",
+      "described": true
+    },
+    {
+      "name": "webkitPerspectiveOriginX",
+      "described": true
+    },
+    {
+      "name": "webkitPerspectiveOriginY",
+      "described": true
+    },
+    {
+      "name": "webkitPrintColorAdjust",
+      "described": true
+    },
+    {
+      "name": "webkitRtlOrdering",
+      "described": true
+    },
+    {
+      "name": "webkitRubyPosition",
+      "described": true
+    },
+    {
+      "name": "webkitShapeImageThreshold",
+      "described": true
+    },
+    {
+      "name": "webkitShapeMargin",
+      "described": true
+    },
+    {
+      "name": "webkitShapeOutside",
+      "described": true
+    },
+    {
+      "name": "webkitTapHighlightColor",
+      "described": true
+    },
+    {
+      "name": "webkitTextCombine",
+      "described": true
+    },
+    {
+      "name": "webkitTextDecorationsInEffect",
+      "described": true
+    },
+    {
+      "name": "webkitTextEmphasis",
+      "described": true
+    },
+    {
+      "name": "webkitTextEmphasisColor",
+      "described": true
+    },
+    {
+      "name": "webkitTextEmphasisPosition",
+      "described": true
+    },
+    {
+      "name": "webkitTextEmphasisStyle",
+      "described": true
+    },
+    {
+      "name": "webkitTextFillColor",
+      "described": true
+    },
+    {
+      "name": "webkitTextOrientation",
+      "described": true
+    },
+    {
+      "name": "webkitTextSecurity",
+      "described": true
+    },
+    {
+      "name": "webkitTextSizeAdjust",
+      "described": true
+    },
+    {
+      "name": "webkitTextStroke",
+      "described": true
+    },
+    {
+      "name": "webkitTextStrokeColor",
+      "described": true
+    },
+    {
+      "name": "webkitTextStrokeWidth",
+      "described": true
+    },
+    {
+      "name": "webkitTransform",
+      "described": true
+    },
+    {
+      "name": "webkitTransformOrigin",
+      "described": true
+    },
+    {
+      "name": "webkitTransformOriginX",
+      "described": true
+    },
+    {
+      "name": "webkitTransformOriginY",
+      "described": true
+    },
+    {
+      "name": "webkitTransformOriginZ",
+      "described": true
+    },
+    {
+      "name": "webkitTransformStyle",
+      "described": true
+    },
+    {
+      "name": "webkitTransition",
+      "described": true
+    },
+    {
+      "name": "webkitTransitionDelay",
+      "described": true
+    },
+    {
+      "name": "webkitTransitionDuration",
+      "described": true
+    },
+    {
+      "name": "webkitTransitionProperty",
+      "described": true
+    },
+    {
+      "name": "webkitTransitionTimingFunction",
+      "described": true
+    },
+    {
+      "name": "webkitUserDrag",
+      "described": true
+    },
+    {
+      "name": "webkitUserModify",
+      "described": true
+    },
+    {
+      "name": "webkitUserSelect",
+      "described": true
+    },
+    {
+      "name": "webkitWritingMode",
+      "described": true
+    },
+    {
+      "name": "whiteSpace",
+      "described": true
+    },
+    {
+      "name": "whiteSpaceCollapse",
+      "described": true
+    },
+    {
+      "name": "widows",
+      "described": true
+    },
+    {
+      "name": "width",
+      "described": true
+    },
+    {
+      "name": "willChange",
+      "described": true
+    },
+    {
+      "name": "wordBreak",
+      "described": true
+    },
+    {
+      "name": "wordSpacing",
+      "described": true
+    },
+    {
+      "name": "wordWrap",
+      "described": true
+    },
+    {
+      "name": "writingMode",
+      "described": true
+    },
+    {
+      "name": "x",
+      "described": true
+    },
+    {
+      "name": "y",
+      "described": true
+    },
+    {
+      "name": "zIndex",
+      "described": true
+    },
+    {
+      "name": "zoom",
+      "described": true
+    }
+  ]
+}

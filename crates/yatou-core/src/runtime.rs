@@ -89,6 +89,10 @@ pub enum ClockMode {
         /// Observable clock quantum. Chrome on a non-isolated page normally
         /// exposes 0.1 ms resolution.
         quantum_ms: f64,
+        /// Absolute monotonic-clock sample used to retain Chrome's observable
+        /// floating-point cancellation pattern after time-origin subtraction.
+        #[serde(default)]
+        precision_anchor_ms: Option<f64>,
     },
 }
 
@@ -244,7 +248,7 @@ impl Default for BrowserProfile {
                 .to_owned(),
             platform: "Win32".to_owned(),
             language: "zh-CN".to_owned(),
-            languages: vec!["zh-CN".to_owned(), "zh".to_owned()],
+            languages: vec!["zh-CN".to_owned()],
             hardware_concurrency: 12,
             screen_width: 1_920,
             screen_height: 1_080,
@@ -359,6 +363,7 @@ struct CallbackState {
     clock_system_started: Option<Instant>,
     clock_system_start_ms: f64,
     clock_system_quantum_ms: f64,
+    clock_system_precision_anchor_ms: Option<f64>,
     observation_sequence: u32,
     observations: Vec<NativeObservation>,
 }
@@ -376,6 +381,7 @@ impl Default for CallbackState {
             clock_system_started: None,
             clock_system_start_ms: 0.0,
             clock_system_quantum_ms: 0.1,
+            clock_system_precision_anchor_ms: None,
             observation_sequence: 0,
             observations: Vec::new(),
         }
@@ -495,9 +501,10 @@ fn configure_callbacks(clock: &ClockMode, record_observations: bool) {
         clock_system_started,
         clock_system_start_ms,
         clock_system_quantum_ms,
+        clock_system_precision_anchor_ms,
     ) = match clock {
         ClockMode::FixedStep { start_ms, step_ms } => {
-            (*start_ms, *step_ms, Vec::new(), 1, None, 0.0, 0.1)
+            (*start_ms, *step_ms, Vec::new(), 1, None, 0.0, 0.1, None)
         }
         ClockMode::Recorded {
             buckets,
@@ -517,11 +524,13 @@ fn configure_callbacks(clock: &ClockMode, record_observations: bool) {
                 None,
                 0.0,
                 0.1,
+                None,
             )
         }
         ClockMode::SystemMonotonic {
             start_ms,
             quantum_ms,
+            precision_anchor_ms,
         } => (
             *start_ms,
             *quantum_ms,
@@ -530,6 +539,7 @@ fn configure_callbacks(clock: &ClockMode, record_observations: bool) {
             Some(Instant::now()),
             *start_ms,
             *quantum_ms,
+            *precision_anchor_ms,
         ),
     };
     CALLBACK_STATE.with(|state| {
@@ -544,6 +554,7 @@ fn configure_callbacks(clock: &ClockMode, record_observations: bool) {
             clock_system_started,
             clock_system_start_ms,
             clock_system_quantum_ms,
+            clock_system_precision_anchor_ms,
             observation_sequence: 0,
             observations: Vec::new(),
         };
@@ -696,12 +707,13 @@ fn performance_now_callback(
         let mut state = state.borrow_mut();
         if let Some(started) = state.clock_system_started {
             let elapsed_ms = started.elapsed().as_secs_f64() * 1_000.0;
-            let quantized_elapsed = if state.clock_system_quantum_ms > 0.0 {
-                (elapsed_ms / state.clock_system_quantum_ms).floor() * state.clock_system_quantum_ms
-            } else {
-                elapsed_ms
-            };
-            let value = (state.clock_system_start_ms + quantized_elapsed).max(state.clock_next_ms);
+            let value = system_monotonic_value(
+                state.clock_system_start_ms,
+                state.clock_system_quantum_ms,
+                state.clock_system_precision_anchor_ms,
+                elapsed_ms,
+            )
+            .max(state.clock_next_ms);
             state.clock_next_ms = value;
             return value;
         }
@@ -725,6 +737,28 @@ fn performance_now_callback(
         summary(JsValueKind::Number, "number"),
     );
     retval.set_double(value);
+}
+
+fn system_monotonic_value(
+    start_ms: f64,
+    quantum_ms: f64,
+    precision_anchor_ms: Option<f64>,
+    elapsed_ms: f64,
+) -> f64 {
+    let quantize = |value: f64| (value / quantum_ms).floor() * quantum_ms;
+    precision_anchor_ms.map_or_else(
+        || start_ms + quantize(elapsed_ms),
+        |anchor| {
+            // Chromium derives DOMHighResTimeStamp values from a large
+            // monotonic-clock reading and then subtracts the time origin.  At
+            // normal Windows uptimes this intentionally preserves a 2^-22 ms
+            // floating-point grid (for example 0.09999990463256836), whereas
+            // quantizing an already-small elapsed Duration yields unrealistically
+            // exact 0.1 ms deltas.
+            let origin = quantize(anchor) - start_ms;
+            quantize(anchor + elapsed_ms) - origin
+        },
+    )
 }
 
 #[allow(clippy::needless_pass_by_value)]
@@ -1364,15 +1398,17 @@ impl RuntimeConfig {
             ClockMode::SystemMonotonic {
                 start_ms,
                 quantum_ms,
+                precision_anchor_ms,
             } => {
                 if !start_ms.is_finite()
                     || *start_ms < 0.0
                     || !quantum_ms.is_finite()
                     || *quantum_ms <= 0.0
                     || *quantum_ms > 1.0
+                    || precision_anchor_ms.is_some_and(|anchor| !anchor.is_finite() || anchor < 0.0)
                 {
                     return Err(RuntimeError::Configuration(
-                        "system-monotonic clock requires finite start_ms >= 0 and quantum_ms in (0, 1]"
+                        "system-monotonic clock requires finite start_ms >= 0, quantum_ms in (0, 1], and an optional finite non-negative precision anchor"
                             .to_owned(),
                     ));
                 }
@@ -2095,6 +2131,10 @@ fn runtime_worker(
             "../../../manifests/chrome150.runtime-surface.json"
         ))
         .map_err(|error| V8Error::ResultDecode(error.to_string()))?;
+        let cssom_instance_properties: serde_json::Value = serde_json::from_str(include_str!(
+            "../../../manifests/chrome150.cssom-instance-properties.json"
+        ))
+        .map_err(|error| V8Error::ResultDecode(error.to_string()))?;
         let runtime_member_count = surface_manifest["interfaces"]
             .as_array()
             .map(|interfaces| {
@@ -2111,6 +2151,25 @@ fn runtime_worker(
                 "runtime surface and generated Rust table disagree".to_owned(),
             ));
         }
+        let cssom_entries = cssom_instance_properties["entries"]
+            .as_array()
+            .ok_or_else(|| {
+                V8Error::ResultDecode("CSSOM instance property entries missing".to_owned())
+            })?;
+        let cssom_described = cssom_entries
+            .iter()
+            .filter(|entry| entry["described"].as_bool() == Some(true))
+            .count();
+        if cssom_instance_properties["baseline_id"] != yatou_surface::GENERATED_BASELINE_ID
+            || cssom_instance_properties["property_count"].as_u64()
+                != u64::try_from(cssom_entries.len()).ok()
+            || cssom_instance_properties["described_property_count"].as_u64()
+                != u64::try_from(cssom_described).ok()
+        {
+            return Err(V8Error::ResultDecode(
+                "CSSOM instance property manifest is invalid or uses another baseline".to_owned(),
+            ));
+        }
         let bootstrap_config = serde_json::json!({
             "profile": config.profile,
             "url": config.url,
@@ -2124,6 +2183,7 @@ fn runtime_worker(
             "get_trace": config.get_trace,
             "baseline": yatou_surface::GENERATED_BASELINE_ID,
             "surface_manifest": surface_manifest,
+            "cssom_instance_properties": cssom_instance_properties,
         });
         let bootstrap_config = serde_json::to_string(&bootstrap_config)
             .map_err(|error| V8Error::ResultDecode(error.to_string()))?;
@@ -2432,4 +2492,30 @@ fn take_host_observations(
     let json =
         bridge_json(scope, bridge, "__yatouTakeHostLog", &[]).map_err(|error| error.to_string())?;
     serde_json::from_str(&json).map_err(|error| error.to_string())
+}
+
+#[cfg(test)]
+mod clock_tests {
+    use super::system_monotonic_value;
+
+    #[test]
+    fn monotonic_anchor_preserves_chrome_precision_grid() {
+        let anchor_ms = 1_307_657_099.982_1;
+        let values = (0..10)
+            .map(|index| system_monotonic_value(200.0, 0.1, Some(anchor_ms), index as f64 * 0.1))
+            .collect::<Vec<_>>();
+        let deltas = values
+            .windows(2)
+            .map(|window| window[1] - window[0])
+            .collect::<Vec<_>>();
+
+        assert_eq!(values[0], 200.0);
+        assert!(deltas.contains(&0.099_999_904_632_568_36));
+        assert!(deltas.contains(&0.100_000_143_051_147_46));
+    }
+
+    #[test]
+    fn missing_anchor_retains_legacy_small_elapsed_quantization() {
+        assert_eq!(system_monotonic_value(200.0, 0.1, None, 0.31), 200.3);
+    }
 }

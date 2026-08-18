@@ -419,6 +419,7 @@
 
   const eventState = new WeakMapIntrinsic();
   const frameWindowState = new WeakMapIntrinsic();
+  const frameRealmState = new WeakMapIntrinsic();
   const frameWindows = [];
   let exposedFrameCount = 0;
   let syncWindowFrames = () => {};
@@ -586,6 +587,29 @@
     }
   }
 
+  class PointerEvent extends MouseEvent {
+    constructor(type, init = {}) {
+      super(type, init);
+      const state = eventData(this);
+      ObjectIntrinsic.assign(state, {
+        pointerId: numberValue(init.pointerId || 0),
+        width: numberValue(init.width || 1),
+        height: numberValue(init.height || 1),
+        pressure: numberValue(init.pressure || 0),
+        tangentialPressure: numberValue(init.tangentialPressure || 0),
+        tiltX: numberValue(init.tiltX || 0),
+        tiltY: numberValue(init.tiltY || 0),
+        twist: numberValue(init.twist || 0),
+        altitudeAngle: numberValue(init.altitudeAngle || MathIntrinsic.PI / 2),
+        azimuthAngle: numberValue(init.azimuthAngle || 0),
+        pointerType: stringValue(init.pointerType || ""),
+        isPrimary: booleanValue(init.isPrimary),
+      });
+    }
+    getCoalescedEvents() { return []; }
+    getPredictedEvents() { return []; }
+  }
+
   const eventTargetState = new WeakMapIntrinsic();
   const eventTargetReceiver = receiver => {
     receiver = rawTraceValue(receiver);
@@ -647,6 +671,12 @@
         else if (entry.callback && typeof entry.callback.handleEvent === "function") entry.callback.handleEvent(event);
         if (state.immediateStopped) break;
       }
+      // Event-handler IDL attributes (onclick, onload, ...) participate in
+      // dispatch even when no addEventListener registration exists.  The
+      // BotGuard probe assigns an anchor.onclick callback and invokes click().
+      const eventHandler = receiver[`on${event.type}`];
+      if (!state.immediateStopped && typeof eventHandler === "function")
+        eventHandler.call(receiver, event);
       state.eventPhase = Event.NONE;
       state.currentTarget = null;
       return !state.defaultPrevented;
@@ -965,6 +995,9 @@
       nodeData(child).parentNode = null;
       const removedElement = stateFor(elementState, child);
       if (removedElement && removedElement.localName === "iframe") {
+        const exposedFrame = frameWindowState.get(rawTraceValue(child));
+        const realm = exposedFrame && frameRealmState.get(rawTraceValue(exposedFrame));
+        if (realm) realm.connected = false;
         removedElement.contentWindow = null;
         removedElement.contentDocument = null;
       }
@@ -1072,29 +1105,44 @@
   }
 
   const cssName = name => stringValue(name).replace(/[A-Z]/g, value => `-${value.toLowerCase()}`);
+  const cssomPropertyEntries = config.cssom_instance_properties
+    && ArrayIntrinsic.isArray(config.cssom_instance_properties.entries)
+    ? config.cssom_instance_properties.entries : [];
+  const cssStyleOwnKeys = cssomPropertyEntries.map(entry => stringValue(entry.name));
+  const cssStyleOwnKeySet = new SetIntrinsic(cssStyleOwnKeys);
+  const cssStyleDescribedKeys = new SetIntrinsic(
+    cssomPropertyEntries.filter(entry => booleanValue(entry.described)).map(entry => stringValue(entry.name))
+  );
+  const cssStyleState = new WeakMapIntrinsic();
+  const cssStyleData = value => stateFor(cssStyleState, value);
   class CSSStyleDeclaration {
-    constructor() { this._values = new MapIntrinsic(); this._priorities = new MapIntrinsic(); }
-    get length() { return this._values.size; }
-    item(index) { return ArrayIntrinsic.from(this._values.keys())[numberValue(index)] || ""; }
+    constructor() {
+      cssStyleState.set(this, { values: new MapIntrinsic(), priorities: new MapIntrinsic() });
+    }
+    get length() { return cssStyleData(this).values.size; }
+    item(index) { return ArrayIntrinsic.from(cssStyleData(this).values.keys())[numberValue(index)] || ""; }
     setProperty(name, value, priority = "") {
       name = cssName(name).trim();
       if (!name) return;
-      this._values.set(name, stringValue(value));
-      this._priorities.set(name, stringValue(priority).toLowerCase() === "important" ? "important" : "");
+      const state = cssStyleData(this);
+      state.values.set(name, stringValue(value));
+      state.priorities.set(name, stringValue(priority).toLowerCase() === "important" ? "important" : "");
     }
-    getPropertyValue(name) { return this._values.get(cssName(name).trim()) || ""; }
-    getPropertyPriority(name) { return this._priorities.get(cssName(name).trim()) || ""; }
+    getPropertyValue(name) { return cssStyleData(this).values.get(cssName(name).trim()) || ""; }
+    getPropertyPriority(name) { return cssStyleData(this).priorities.get(cssName(name).trim()) || ""; }
     removeProperty(name) {
       name = cssName(name).trim();
       const previous = this.getPropertyValue(name);
-      this._values.delete(name); this._priorities.delete(name);
+      const state = cssStyleData(this);
+      state.values.delete(name); state.priorities.delete(name);
       return previous;
     }
     get cssText() {
-      return ArrayIntrinsic.from(this._values, ([name, value]) => `${name}: ${value}${this.getPropertyPriority(name) ? " !important" : ""};`).join(" ");
+      return ArrayIntrinsic.from(cssStyleData(this).values, ([name, value]) => `${name}: ${value}${this.getPropertyPriority(name) ? " !important" : ""};`).join(" ");
     }
     set cssText(value) {
-      this._values.clear(); this._priorities.clear();
+      const state = cssStyleData(this);
+      state.values.clear(); state.priorities.clear();
       for (const declaration of stringValue(value).split(";")) {
         const separator = declaration.indexOf(":");
         if (separator < 0) continue;
@@ -1106,20 +1154,45 @@
       }
     }
   }
-  const styleProxy = style => new ProxyIntrinsic(style, {
+  const styleProxy = style => {
+    const proxy = new ProxyIntrinsic(style, {
     get(target, key, receiver) {
-      if (typeof key === "string" && !(key in target)) return target.getPropertyValue(key);
+      if (typeof key === "string") {
+        if (/^(?:0|[1-9]\d*)$/.test(key)) return target.item(numberValue(key));
+        if (cssStyleOwnKeySet.has(key)) return target.getPropertyValue(key);
+        if (!(key in target)) return target.getPropertyValue(key);
+      }
       return ReflectIntrinsic.get(target, key, receiver);
     },
     set(target, key, value, receiver) {
-      if (typeof key === "string" && !(key in target)) { target.setProperty(key, value); return true; }
+      if (typeof key === "string" && (cssStyleOwnKeySet.has(key) || !(key in target))) {
+        target.setProperty(key, value); return true;
+      }
       return ReflectIntrinsic.set(target, key, value, receiver);
     },
-    ownKeys(target) { return ReflectIntrinsic.ownKeys(target).concat(ArrayIntrinsic.from(target._values.keys())); },
+    has(target, key) {
+      return typeof key === "string" && cssStyleOwnKeySet.has(key) || ReflectIntrinsic.has(target, key);
+    },
+    ownKeys(target) {
+      const state = cssStyleData(target);
+      const indexes = ArrayIntrinsic.from(state.values.keys(), (_name, index) => String(index));
+      const extras = ReflectIntrinsic.ownKeys(target).filter(key => !cssStyleOwnKeySet.has(key));
+      return indexes.concat(cssStyleOwnKeys, extras);
+    },
     getOwnPropertyDescriptor(target, key) {
-      return ReflectIntrinsic.getOwnPropertyDescriptor(target, key) || { configurable: true, enumerable: true, writable: true, value: target.getPropertyValue(key) };
+      if (typeof key === "string" && /^(?:0|[1-9]\d*)$/.test(key)) {
+        const value = target.item(numberValue(key));
+        if (value) return { configurable: true, enumerable: true, writable: false, value };
+      }
+      if (typeof key === "string" && cssStyleDescribedKeys.has(key))
+        return { configurable: true, enumerable: true, writable: true, value: target.getPropertyValue(key) };
+      if (typeof key === "string" && cssStyleOwnKeySet.has(key)) return undefined;
+      return ReflectIntrinsic.getOwnPropertyDescriptor(target, key);
     }
-  });
+    });
+    cssStyleState.set(proxy, cssStyleData(style));
+    return proxy;
+  };
 
   const descendants = root => {
     const output = [];
@@ -1228,7 +1301,20 @@
     get clientHeight() { return this === document.documentElement ? config.viewport.height : 0; }
   }
 
-  class HTMLElement extends Element {}
+  class HTMLElement extends Element {
+    click() {
+      // Modern Chromium dispatches a synthetic PointerEvent for
+      // HTMLElement.click().  The event is untrusted and reaches listeners
+      // synchronously before click() returns.
+      const event = new PointerEvent("click", {
+        bubbles: true,
+        cancelable: true,
+        composed: true,
+        view: globalObject,
+      });
+      EventTarget.prototype.dispatchEvent.call(this, event);
+    }
+  }
   class HTMLIFrameElement extends HTMLElement {
     // These members live on HTMLIFrameElement in Chrome, not Element.  Keep
     // them on the specialised prototype so generated Element descriptors can
@@ -1581,14 +1667,14 @@
     }
   }
 
-  async function fetch(input, init = {}) {
+  function fetch(input, init = {}) {
     const url = stringValue(input && input.url || input);
     const method = stringValue(init.method || input && input.method || "GET").toUpperCase();
     const resource = resources.get(url);
     if (!resource) {
       const error = new TypeErrorIntrinsic(`offline resource not found: ${url}`);
       logApi("globalThis", "fetch", "call", [url, init], error, true);
-      throw error;
+      return PromiseIntrinsic.reject(error);
     }
     const requestId = `resource-${++requestSequence}`;
     log("resource_request", { request_id: requestId, method, url });
@@ -1601,7 +1687,7 @@
     });
     const response = new Response(resource.body, { status: resource.status, headers: resource.headers, url });
     logApi("globalThis", "fetch", "call", [url, init], response);
-    return response;
+    return PromiseIntrinsic.resolve(response);
   }
 
   class XMLHttpRequest extends EventTarget {
@@ -1639,6 +1725,41 @@
   const setTimeoutHost = (callback, delay = 0, ...args) => schedule(callback, delay, false, args);
   const setIntervalHost = (callback, delay = 0, ...args) => schedule(callback, delay, true, args);
   const clearTimer = timerId => timers.delete(numberValue(timerId));
+  const idleDeadlineToken = {};
+  const idleDeadlineState = new WeakMapIntrinsic();
+  class IdleDeadline {
+    constructor(token, didTimeout = false, deadlineMs = clockMs) {
+      if (token !== idleDeadlineToken)
+        throw new TypeErrorIntrinsic("Illegal constructor");
+      idleDeadlineState.set(this, {
+        didTimeout: booleanValue(didTimeout),
+        deadlineMs: numberValue(deadlineMs)
+      });
+    }
+    get didTimeout() {
+      const state = idleDeadlineState.get(this);
+      if (!state) throw new TypeErrorIntrinsic("Illegal invocation");
+      return state.didTimeout;
+    }
+    timeRemaining() {
+      const state = idleDeadlineState.get(this);
+      if (!state) throw new TypeErrorIntrinsic("Illegal invocation");
+      return MathIntrinsic.max(0, state.deadlineMs - clockMs);
+    }
+  }
+  const requestIdleCallbackHost = (callback, options = {}) => {
+    if (typeof callback !== "function")
+      throw new TypeErrorIntrinsic("Failed to execute 'requestIdleCallback' on 'Window': parameter 1 is not of type 'IdleRequestCallback'.");
+    // An idle task is immediately eligible when the deterministic host queue
+    // is drained.  The 50 ms budget mirrors Chromium's maximum idle period;
+    // timeout remains a deadline/fallback, not an artificial delay.
+    const timeout = options == null ? 0 : MathIntrinsic.max(0, numberValue(options.timeout) || 0);
+    const scheduledAt = clockMs;
+    return schedule(() => {
+      const didTimeout = timeout > 0 && clockMs - scheduledAt >= timeout;
+      callback(new IdleDeadline(idleDeadlineToken, didTimeout, clockMs + 50));
+    }, 0, false, []);
+  };
   const queueMicrotaskHost = callback => { if (typeof callback !== "function") throw new TypeErrorIntrinsic("callback is not a function"); microtasks.push(callback); };
   const drain = (limit = 1000) => {
     limit = MathIntrinsic.max(0, MathIntrinsic.min(100000, numberValue(limit) || 0));
@@ -1667,6 +1788,7 @@
     [CustomEvent, "CustomEvent"],
     [UIEvent, "UIEvent"],
     [MouseEvent, "MouseEvent"],
+    [PointerEvent, "PointerEvent"],
     [EventTarget, "EventTarget"],
     [Node, "Node"],
     [CharacterData, "CharacterData"],
@@ -1741,6 +1863,10 @@
   let locationState = parseLocation(config.url);
   const pendingNavigations = [];
   const location = {};
+  // Keep the browsing-session History singleton as a real branded Web IDL
+  // object.  The generated global `history` accessor preserves this backing
+  // value when the exact Chrome surface is reconciled below.
+  const history = {};
   const locationAncestorOrigins = {};
   const assertLocationReceiver = receiver => {
     if (rawTraceValue(receiver) !== location)
@@ -1798,6 +1924,16 @@
   ]) ObjectIntrinsic.defineProperty(location, key, {
     value, writable: false, enumerable: true, configurable: false
   });
+  const locationToPrimitive = function (hint) {
+    assertLocationReceiver(this);
+    return hint === "number" ? NumberIntrinsic.NaN : locationState.href;
+  };
+  ObjectIntrinsic.defineProperty(location, Symbol.toPrimitive, {
+    value: locationToPrimitive,
+    writable: false,
+    enumerable: false,
+    configurable: false,
+  });
   activeLocation = location;
   registerTraceTarget(location, "Location.prototype");
   const documentLocationGetter = function () { return activeLocation; };
@@ -1832,8 +1968,8 @@
   const connection = ObjectIntrinsic.create(NetworkInformation.prototype);
   networkInformationState.set(connection, {
     effectiveType: "4g",
-    rtt: 150,
-    downlink: 1.75,
+    rtt: 100,
+    downlink: 1.45,
     saveData: false,
     onchange: null
   });
@@ -1951,9 +2087,9 @@
   performanceNavigationState.set(performanceNavigation, { type: 0, redirectCount: 0 });
   const performanceMemory = ObjectIntrinsic.create(MemoryInfoPrototype);
   memoryInfoState.set(performanceMemory, {
-    totalJSHeapSize: 10_000_000,
-    usedJSHeapSize: 10_000_000,
-    jsHeapSizeLimit: 3_760_000_000
+    totalJSHeapSize: 9_571_525,
+    usedJSHeapSize: 5_642_245,
+    jsHeapSizeLimit: 4_395_630_592
   });
   const performanceNavigationEntry = {};
   const performanceEntries = [performanceNavigationEntry];
@@ -1986,7 +2122,7 @@
         connectionInfo: "unknown"
       };
     },
-    csi() {
+    csi: function () {
       return {
         startE: navigationStart,
         onloadT: performanceTiming.loadEventEnd,
@@ -2055,6 +2191,7 @@
   getter(globalObject, "document", () => document);
   getter(globalObject, "visualViewport", () => visualViewport);
   data(globalObject, "location", location);
+  data(globalObject, "history", history);
   data(globalObject, "origin", location.origin);
   data(globalObject, "innerWidth", config.viewport.width);
   data(globalObject, "innerHeight", config.viewport.height);
@@ -2067,6 +2204,7 @@
   data(globalObject, "CustomEvent", CustomEvent);
   data(globalObject, "UIEvent", UIEvent);
   data(globalObject, "MouseEvent", MouseEvent);
+  data(globalObject, "PointerEvent", PointerEvent);
   data(globalObject, "EventTarget", EventTarget);
   data(globalObject, "PluginArray", PluginArray);
   data(globalObject, "Plugin", Plugin);
@@ -2105,6 +2243,9 @@
   data(globalObject, "clearTimeout", clearTimer);
   data(globalObject, "setInterval", setIntervalHost);
   data(globalObject, "clearInterval", clearTimer);
+  data(globalObject, "IdleDeadline", IdleDeadline);
+  data(globalObject, "requestIdleCallback", requestIdleCallbackHost);
+  data(globalObject, "cancelIdleCallback", clearTimer);
   data(globalObject, "queueMicrotask", queueMicrotaskHost);
   data(globalObject, "requestAnimationFrame", callback => schedule(() => callback(clockMs), 1000 / 60, false, []));
   data(globalObject, "cancelAnimationFrame", clearTimer);
@@ -2146,15 +2287,13 @@
     ...ObjectIntrinsic.getOwnPropertyDescriptor(FunctionIntrinsic.prototype, "toString"),
     value: nativeToString
   });
-  ObjectIntrinsic.defineProperty(DateIntrinsic, "now", {
-    ...ObjectIntrinsic.getOwnPropertyDescriptor(DateIntrinsic, "now"),
-    value: markNative(function now() {
-      return MathIntrinsic.floor(config.time_origin_ms + performance.now());
-    }, { name: "now", length: 0, native_like: true })
-  });
+  // Keep V8's native Date.now. Chrome's wall clock advances independently of
+  // Performance.now and does not consume a DOMHighResTimeStamp observation.
+  // Routing Date.now through performance.now shifted the VM's recorded clock
+  // stream and made timing-sensitive bytecode take the rejection branch.
   for (const [owner, key, name, length] of [
     [chrome, "loadTimes", "loadTimes", 0],
-    [chrome, "csi", "csi", 0],
+    [chrome, "csi", "", 0],
     [chromeApp, "getDetails", "getDetails", 0],
     [chromeApp, "getIsInstalled", "getIsInstalled", 0],
     [chromeApp, "installState", "installState", 1],
@@ -2187,6 +2326,9 @@
   });
   markNative(documentLocationSetter, {
     name: "set location", length: 1, native_like: true
+  });
+  markNative(locationToPrimitive, {
+    name: "[Symbol.toPrimitive]", length: 1, native_like: true
   });
 
   const manifestKey = key => {
@@ -2250,7 +2392,7 @@
         userAgent: profile.user_agent, appVersion: profile.user_agent.replace(/^Mozilla\//, ""),
         appCodeName: "Mozilla", appName: "Netscape", platform: profile.platform,
         language: profile.language, languages: ObjectIntrinsic.freeze(profile.languages.slice()),
-        hardwareConcurrency: profile.hardware_concurrency, deviceMemory: 8, maxTouchPoints: 0,
+        hardwareConcurrency: profile.hardware_concurrency, deviceMemory: 32, maxTouchPoints: 0,
         webdriver: false, cookieEnabled: true, onLine: true, product: "Gecko",
         productSub: "20030107", vendor: "Google Inc.", vendorSub: "", pdfViewerEnabled: true
       };
@@ -2300,6 +2442,15 @@
       }
       if (key === "contentDocument") return finish(null);
     }
+    // Layout is intentionally not implemented, but CSSOM View numeric
+    // geometry accessors still return Web IDL `long` values for disconnected
+    // elements.  Returning the generic nullable fallback here is observable:
+    // BotGuard reads a detached HTMLImageElement.offsetHeight and expects the
+    // same numeric zero Chrome returns when no layout box exists.
+    if (path === "HTMLElement.prototype"
+      && ["offsetHeight", "offsetWidth", "offsetTop", "offsetLeft"].includes(key))
+      return finish(0);
+    if (path === "HTMLElement.prototype" && key === "offsetParent") return finish(null);
     if ((path === "globalThis" || path === "Window.prototype")
       && (key === "name" || key === "status"))
       return finish("");
@@ -2357,6 +2508,32 @@
     if ((path === "Node" || path === "Node.prototype")
       && ObjectIntrinsic.prototype.hasOwnProperty.call(nodeConstants, member.k.display))
       return nodeConstants[member.k.display];
+    if ((path === "Window" || path === "Window.prototype")
+      && member.k.display === "PERSISTENT") return 1;
+    if (path === "globalThis" && [
+      "CSS", "GPUBufferUsage", "GPUColorWrite", "GPUMapMode",
+      "GPUShaderStage", "GPUTextureUsage"
+    ].includes(member.k.display)) {
+      const namespace = {};
+      const constants = member.k.display === "GPUColorWrite"
+        ? { RED: 1, GREEN: 2, BLUE: 4, ALPHA: 8, ALL: 15 }
+        : {};
+      for (const [key, value] of ObjectIntrinsic.entries(constants)) {
+        ObjectIntrinsic.defineProperty(namespace, key, {
+          value,
+          writable: false,
+          enumerable: true,
+          configurable: true,
+        });
+      }
+      ObjectIntrinsic.defineProperty(namespace, Symbol.toStringTag, {
+        value: member.k.display,
+        writable: false,
+        enumerable: false,
+        configurable: true
+      });
+      return namespace;
+    }
     if (member.t === "number") return 0;
     if (member.t === "string") return "";
     if (member.t === "boolean") return false;
@@ -2380,7 +2557,6 @@
     const path = target === globalObject ? "globalThis" : semanticTraceTarget(target);
     if (path === "globalThis") {
       syncWindowFrames();
-      keys = reflectOwnKeysIntrinsic(target);
     }
     // A semantic trace target may be inherited from an instance prototype.
     // Descriptor-baseline ordering applies only to the exact captured surface
@@ -2505,6 +2681,11 @@
   bindInstance(performanceTiming, "PerformanceTiming", false);
   bindInstance(performanceNavigation, "PerformanceNavigation", false);
   bindInstance(location, "Location", false);
+  bindInstance(history, "History", false);
+  const historySlots = slotsFor(history);
+  historySlots.set("length", 2);
+  historySlots.set("scrollRestoration", "auto");
+  historySlots.set("state", null);
   bindInstance(locationAncestorOrigins, "DOMStringList", false);
   slotsFor(locationAncestorOrigins).set("length", 0);
   const nativeNow = ObjectIntrinsic.getOwnPropertyDescriptor(performance, "now");
@@ -2517,6 +2698,9 @@
   // Keep the implementation state in Document, but expose the WebIDL-derived
   // prototype so brand checks and constructor identity match text/html.
   bindInstance(document, "HTMLDocument", false);
+  bindInstance(document.documentElement, "HTMLHtmlElement", false);
+  bindInstance(document.head, "HTMLHeadElement", false);
+  bindInstance(document.body, "HTMLBodyElement", false);
   bindInstance(performanceNavigationEntry, "PerformanceNavigationTiming", false);
   const navigationEntrySlots = slotsFor(performanceNavigationEntry);
   const navigationEntryProfile = profile.navigation_entry || {};
@@ -2565,9 +2749,10 @@
   registerTraceTarget(MemoryInfoPrototype, "MemoryInfo.prototype");
   registerTraceTarget(performanceMemory, "MemoryInfo.prototype");
 
-  const applyMember = (path, object, member) => {
+  const applyMember = (path, object, member, preserved = null) => {
     const key = manifestKey(member.k);
-    const current = ObjectIntrinsic.getOwnPropertyDescriptor(object, key);
+    const current = ObjectIntrinsic.getOwnPropertyDescriptor(object, key)
+      || preserved && preserved.get(key);
     if (current && !current.configurable) {
       if (current.value && member.f) markNative(current.value, member.f);
       if (member.d === "data" && current.writable && member.w === false) {
@@ -2637,6 +2822,23 @@
       if (descriptor) ObjectIntrinsic.defineProperty(object, key, descriptor);
     }
   };
+  const ecmaIntrinsicPrototypePaths = new SetIntrinsic([
+    "Object.prototype", "Function.prototype", "Array.prototype",
+    "Number.prototype", "Boolean.prototype", "String.prototype",
+    "Symbol.prototype", "BigInt.prototype", "Date.prototype",
+    "RegExp.prototype", "Promise.prototype", "Map.prototype",
+    "Set.prototype", "WeakMap.prototype", "WeakSet.prototype",
+    "WeakRef.prototype", "FinalizationRegistry.prototype",
+    "ArrayBuffer.prototype", "SharedArrayBuffer.prototype", "DataView.prototype",
+    "Error.prototype", "AggregateError.prototype", "EvalError.prototype",
+    "RangeError.prototype", "ReferenceError.prototype", "SyntaxError.prototype",
+    "TypeError.prototype", "URIError.prototype", "Iterator.prototype",
+    "Uint8Array.prototype", "Int8Array.prototype", "Uint16Array.prototype",
+    "Int16Array.prototype", "Uint32Array.prototype", "Int32Array.prototype",
+    "BigUint64Array.prototype", "BigInt64Array.prototype",
+    "Uint8ClampedArray.prototype", "Float16Array.prototype",
+    "Float32Array.prototype", "Float64Array.prototype"
+  ]);
   for (const spec of interfaces) {
     if (spec.path === "globalThis") continue;
     const object = surfaceObjects.get(spec.path);
@@ -2647,8 +2849,31 @@
       const descriptor = ObjectIntrinsic.getOwnPropertyDescriptor(object, key);
       if (descriptor && descriptor.configurable) ReflectIntrinsic.deleteProperty(object, key);
     }
-    for (const member of spec.members) applyMember(spec.path, object, member);
-    reorderConfigurableMembers(object, spec);
+    const orderedWebIdlConstants = spec.path.endsWith(".prototype")
+      && spec.members.some(member => member.c === false)
+      && !ecmaIntrinsicPrototypePaths.has(spec.path);
+    if (orderedWebIdlConstants) {
+      // Preserve implementations while recreating configurable descriptors
+      // around Web IDL's non-configurable constants in exact manifest order.
+      // A generic post-pass cannot move a configurable member back in front
+      // of an already-created non-configurable constant.  This affects Node,
+      // FileReader, XMLHttpRequest, WebSocket, Event and SVG/WebGL constants.
+      const preserved = new MapIntrinsic();
+      for (let memberIndex = 0; memberIndex < spec.members.length; memberIndex += 1) {
+        const member = spec.members[memberIndex];
+        const key = manifestKey(member.k);
+        const descriptor = ObjectIntrinsic.getOwnPropertyDescriptor(object, key);
+        if (descriptor && descriptor.configurable) {
+          preserved.set(key, descriptor);
+          ReflectIntrinsic.deleteProperty(object, key);
+        }
+      }
+      for (let memberIndex = 0; memberIndex < spec.members.length; memberIndex += 1)
+        applyMember(spec.path, object, spec.members[memberIndex], preserved);
+    } else {
+      for (const member of spec.members) applyMember(spec.path, object, member);
+      reorderConfigurableMembers(object, spec);
+    }
     registerTraceTarget(object, spec.path);
   }
   // Image/Audio/Option are legacy factory aliases, not distinct WebIDL
@@ -2677,7 +2902,27 @@
       const descriptor = ObjectIntrinsic.getOwnPropertyDescriptor(globalObject, key);
       if (descriptor && descriptor.configurable) ReflectIntrinsic.deleteProperty(globalObject, key);
     }
-    for (const member of globalSpec.members) applyMember("globalThis", globalObject, member);
+    // Native rusty_v8 exposes newer built-ins (Temporal, DisposableStack,
+    // Float16Array, ...) before Chromium's WebIDL globals. Chrome places those
+    // names later in the Window surface. Preserve and remove the configurable
+    // tail before applyMember can turn unforgeable members non-configurable,
+    // then recreate the complete tail in manifest order. This gives native
+    // Reflect.ownKeys/Object.keys/for...in the same ordering without depending
+    // on diagnostic reflection wrappers.
+    const firstWindowSurface = globalSpec.members.findIndex(
+      member => member.k.kind === "string" && member.k.display === "Option"
+    );
+    const preservedGlobalTail = new MapIntrinsic();
+    for (const member of globalSpec.members.slice(firstWindowSurface < 0 ? 0 : firstWindowSurface)) {
+      const key = manifestKey(member.k);
+      const descriptor = ObjectIntrinsic.getOwnPropertyDescriptor(globalObject, key);
+      if (descriptor && descriptor.configurable) {
+        preservedGlobalTail.set(key, descriptor);
+        ReflectIntrinsic.deleteProperty(globalObject, key);
+      }
+    }
+    for (const member of globalSpec.members)
+      applyMember("globalThis", globalObject, member, preservedGlobalTail);
     // Namespace singletons such as Math, JSON, Reflect, Atomics and Intl do
     // not have dedicated interface rows in the first surface baseline. Give
     // their actual global values a direct semantic identity; otherwise owner
@@ -2777,6 +3022,8 @@
       let exposedFrame = frameWindowState.get(iframe);
       if (!exposedFrame) {
         const frame = ObjectIntrinsic.create(windowPrototype);
+        const frameRealm = { connected: true };
+        frameRealmState.set(frame, frameRealm);
         const frameLocation = makeFrameLocation();
         const frameDocument = new Document();
         const frameDocumentState = documentData(frameDocument);
@@ -2800,6 +3047,8 @@
         });
         bindInstance(frameDocument, "HTMLDocument", false);
         const exposedDocument = observeTraceValue(frameDocument, "HTMLDocument.prototype");
+        const frameHasViewport = () => frameRealm.connected
+          && elementData(iframe).style.getPropertyValue("display") !== "none";
         const frameValues = new MapIntrinsic([
           ["globalThis", () => frame],
           ["window", () => frame],
@@ -2810,7 +3059,15 @@
           ["document", () => exposedDocument],
           ["location", () => frameLocation],
           ["frameElement", () => iframe],
-          ["length", () => 0]
+          ["length", () => 0],
+          // Chrome collapses the viewport and outer dimensions to zero once
+          // an iframe browsing context is detached.  BotGuard deliberately
+          // retains contentWindow across removeChild() and probes this state.
+          ["innerWidth", () => frameHasViewport() ? 300 : 0],
+          ["innerHeight", () => frameHasViewport() ? 150 : 0],
+          ["outerWidth", () => frameRealm.connected ? profile.outer_width : 0],
+          ["outerHeight", () => frameRealm.connected ? profile.outer_height : 0],
+          ["closed", () => !frameRealm.connected]
         ]);
         for (const member of globalSpec ? globalSpec.members : []) {
           const key = manifestKey(member.k);
@@ -2898,5 +3155,5 @@
       maxEvents: getTraceConfig.maxEvents
     })
   }), false);
-  installReflectionTracing();
+  if (getTraceConfig.enabled) installReflectionTracing();
 })()

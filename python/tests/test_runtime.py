@@ -5,6 +5,7 @@ from collections.abc import Iterator, Mapping
 import datetime
 from enum import Enum
 import json
+import math
 import time
 import unittest
 
@@ -81,8 +82,12 @@ class RuntimeTests(unittest.TestCase):
 
         self.assertEqual(config.profile.clock["mode"], "system_monotonic")
         self.assertEqual(config.profile.clock["start_ms"], 421.0)
+        self.assertTrue(math.isfinite(config.profile.clock["precision_anchor_ms"]))
+        self.assertGreater(config.profile.clock["precision_anchor_ms"], 0.0)
         self.assertEqual(config.profile.navigation_timing["response_start"], 390)
         self.assertEqual(config.profile.navigation_timing["response_end"], 421)
+        self.assertEqual(config.profile.navigation_timing["fetch_start"], 2)
+        self.assertEqual(config.profile.navigation_timing["domain_lookup_start"], 2)
         self.assertIsNone(config.profile.navigation_timing["load_event_end"])
         with yatouv8.Runtime(config) as runtime:
             first = runtime.eval("performance.now()")
@@ -328,6 +333,52 @@ class RuntimeTests(unittest.TestCase):
                 runtime.eval("throw new TypeError('expected')")
             self.assertEqual(runtime.eval("6 * 7"), 42)
 
+    def test_request_idle_callback_runs_through_host_queue(self) -> None:
+        with yatouv8.Runtime() as runtime:
+            result = runtime.eval(
+                """
+                (() => {
+                    globalThis.idleProbe = [];
+                    const cancelled = requestIdleCallback(() => idleProbe.push("cancelled"));
+                    cancelIdleCallback(cancelled);
+                    const active = requestIdleCallback(deadline => idleProbe.push({
+                        tag: Object.prototype.toString.call(deadline),
+                        didTimeout: deadline.didTimeout,
+                        remaining: deadline.timeRemaining(),
+                    }), {timeout: 4});
+                    return {
+                        activeType: typeof active,
+                        requestName: requestIdleCallback.name,
+                        requestLength: requestIdleCallback.length,
+                        requestNative: Function.prototype.toString
+                            .call(requestIdleCallback).includes("[native code]"),
+                        initial: idleProbe.slice(),
+                    };
+                })()
+                """
+            )
+            self.assertEqual(result["activeType"], "number")
+            self.assertEqual(result["requestName"], "requestIdleCallback")
+            self.assertEqual(result["requestLength"], 1)
+            self.assertTrue(result["requestNative"])
+            self.assertEqual(result["initial"], [])
+            runtime.drain()
+            probe = runtime.eval("idleProbe.slice()")
+
+        self.assertEqual(len(probe), 1)
+        self.assertEqual(probe[0]["tag"], "[object IdleDeadline]")
+        self.assertFalse(probe[0]["didTimeout"])
+        self.assertGreaterEqual(probe[0]["remaining"], 0)
+        self.assertLessEqual(probe[0]["remaining"], 50)
+
+    def test_idle_deadline_constructor_is_illegal(self) -> None:
+        with yatouv8.Runtime() as runtime:
+            result = runtime.eval(
+                "try { new IdleDeadline(); 'unexpected' } "
+                "catch (error) { `${error.name}: ${error.message}` }"
+            )
+        self.assertEqual(result, "TypeError: Illegal constructor")
+
     def test_trusted_types_chrome150_contract(self) -> None:
         with yatouv8.Runtime() as runtime:
             result = runtime.eval(
@@ -540,6 +591,24 @@ class RuntimeTests(unittest.TestCase):
                 (() => {
                     const image = document.createElement("img");
                     const div = document.createElement("div");
+                    let clickEvent = null;
+                    div.addEventListener("click", event => {
+                        clickEvent = [
+                            Object.prototype.toString.call(event),
+                            event.constructor.name,
+                            event.isTrusted,
+                        ];
+                    });
+                    const anchor = document.createElement("a");
+                    let propertyClickEvent = null;
+                    anchor.onclick = event => {
+                        propertyClickEvent = [
+                            Object.prototype.toString.call(event),
+                            event.isTrusted,
+                        ];
+                    };
+                    div.click();
+                    anchor.click();
                     return {
                         name: window.name,
                         status: window.status,
@@ -558,12 +627,35 @@ class RuntimeTests(unittest.TestCase):
                             image.src,
                             image.alt,
                             image.title,
+                            image.offsetWidth,
+                            image.offsetHeight,
+                            typeof image.offsetHeight,
                         ],
                         div: [
                             Object.prototype.toString.call(div),
                             div.constructor.name,
                             div.align,
                         ],
+                        documentElement: [
+                            Object.prototype.toString.call(document.documentElement),
+                            document.documentElement.constructor.name,
+                        ],
+                        clickEvent,
+                        propertyClickEvent,
+                        history: [
+                            Object.prototype.toString.call(history),
+                            history.constructor.name,
+                            history.length,
+                            history.scrollRestoration,
+                            history.state,
+                            Function.prototype.toString.call(
+                                Object.getOwnPropertyDescriptor(
+                                    History.prototype,
+                                    "length",
+                                ).get,
+                            ),
+                        ],
+                        fileReaderKeys: Object.getOwnPropertyNames(FileReader.prototype),
                     };
                 })()
                 """
@@ -574,9 +666,29 @@ class RuntimeTests(unittest.TestCase):
         self.assertEqual(result["dimensions"], [1280, 633, 1280, 720, 1920, 1080])
         self.assertEqual(
             result["image"],
-            ["[object HTMLImageElement]", "HTMLImageElement", "", "", ""],
+            ["[object HTMLImageElement]", "HTMLImageElement", "", "", "", 0, 0, "number"],
         )
         self.assertEqual(result["div"], ["[object HTMLDivElement]", "HTMLDivElement", ""])
+        self.assertEqual(
+            result["documentElement"],
+            ["[object HTMLHtmlElement]", "HTMLHtmlElement"],
+        )
+        self.assertEqual(result["clickEvent"], ["[object PointerEvent]", "PointerEvent", False])
+        self.assertEqual(result["propertyClickEvent"], ["[object PointerEvent]", False])
+        self.assertEqual(
+            result["history"][:5],
+            ["[object History]", "History", 2, "auto", None],
+        )
+        self.assertEqual(result["history"][5], "function get length() { [native code] }")
+        self.assertEqual(
+            result["fileReaderKeys"],
+            [
+                "readyState", "result", "error", "onloadstart", "onprogress",
+                "onload", "onabort", "onerror", "onloadend", "EMPTY", "LOADING",
+                "DONE", "abort", "readAsArrayBuffer", "readAsBinaryString",
+                "readAsDataURL", "readAsText", "constructor",
+            ],
+        )
 
     def test_td_candidate_api_semantics_match_chrome150(self) -> None:
         with yatouv8.Runtime() as runtime:
@@ -689,7 +801,7 @@ class RuntimeTests(unittest.TestCase):
             self.assertEqual(result["mimeLength"], 2)
             self.assertEqual(result["permissionsTag"], "[object Permissions]")
             self.assertEqual(result["connectionTag"], "[object NetworkInformation]")
-            self.assertEqual(result["connection"], ["4g", 150, 1.75, False])
+            self.assertEqual(result["connection"], ["4g", 100, 1.45, False])
             self.assertEqual(
                 result["deprecatedStorage"],
                 [
@@ -1154,6 +1266,7 @@ class RuntimeTests(unittest.TestCase):
                 (() => {
                     const iframe = document.createElement('iframe');
                     document.body.appendChild(iframe);
+                    const retainedFrame = iframe.contentWindow;
                     const descriptor = Object.getOwnPropertyDescriptor(window, '0');
                     const beforeRemoval = {
                         length: window.length,
@@ -1173,12 +1286,24 @@ class RuntimeTests(unittest.TestCase):
                         childBaseURI: iframe.contentDocument.baseURI,
                         childReferrer: iframe.contentDocument.referrer,
                         frameElement: iframe.contentWindow.frameElement === iframe,
+                        dimensions: [
+                            retainedFrame.innerWidth,
+                            retainedFrame.innerHeight,
+                            retainedFrame.outerWidth,
+                            retainedFrame.outerHeight,
+                        ],
+                        closed: retainedFrame.closed,
                         descriptor: {
                             writable: descriptor.writable,
                             enumerable: descriptor.enumerable,
                             configurable: descriptor.configurable,
                         },
                     };
+                    iframe.style.display = 'none';
+                    beforeRemoval.hiddenViewport = [
+                        retainedFrame.innerWidth,
+                        retainedFrame.innerHeight,
+                    ];
                     iframe.remove();
                     return {
                         beforeRemoval,
@@ -1186,6 +1311,13 @@ class RuntimeTests(unittest.TestCase):
                             length: window.length,
                             zero: typeof window[0],
                             hasZero: Object.getOwnPropertyNames(window).includes('0'),
+                            dimensions: [
+                                retainedFrame.innerWidth,
+                                retainedFrame.innerHeight,
+                                retainedFrame.outerWidth,
+                                retainedFrame.outerHeight,
+                            ],
+                            closed: retainedFrame.closed,
                         },
                     };
                 })()
@@ -1209,6 +1341,9 @@ class RuntimeTests(unittest.TestCase):
                     "childBaseURI": "https://fixture.invalid/",
                     "childReferrer": "https://fixture.invalid/",
                     "frameElement": True,
+                    "dimensions": [300, 150, 1280, 720],
+                    "closed": False,
+                    "hiddenViewport": [0, 0],
                     "descriptor": {
                         "writable": False,
                         "enumerable": True,
@@ -1219,6 +1354,8 @@ class RuntimeTests(unittest.TestCase):
                     "length": 0,
                     "zero": "undefined",
                     "hasZero": False,
+                    "dimensions": [0, 0, 0, 0],
+                    "closed": True,
                 },
             },
         )
@@ -1438,6 +1575,147 @@ class RuntimeTests(unittest.TestCase):
                     "regexp": ["lastIndex"],
                 },
             )
+
+    def test_reflection_wrappers_preserve_object_keys_enumerability(self) -> None:
+        for enabled in (False, True):
+            config = yatouv8.RuntimeConfig(
+                get_trace=yatouv8.GetTraceConfig(enabled=enabled, max_events=10_000)
+            )
+            with yatouv8.Runtime(config) as runtime:
+                observed = runtime.eval(
+                    """
+                    (() => {
+                        const keys = Object.keys(window);
+                        const names = Object.getOwnPropertyNames(window);
+                        const forIn = [];
+                        for (const key in window) forIn.push(key);
+                        return {
+                            objectEnumerable: Object.getOwnPropertyDescriptor(
+                                window, "Object"
+                            ).enumerable,
+                            keysContainObject: keys.includes("Object"),
+                            keysContainWindow: keys.includes("window"),
+                            namesContainObject: names.includes("Object"),
+                            forInPrefixMatchesObjectKeys:
+                                JSON.stringify(forIn.slice(0, keys.length))
+                                === JSON.stringify(keys),
+                            forInInheritedTail: forIn.slice(keys.length),
+                        };
+                    })()
+                    """
+                )
+
+            self.assertEqual(
+                observed,
+                {
+                    "objectEnumerable": False,
+                    "keysContainObject": False,
+                    "keysContainWindow": True,
+                    "namesContainObject": True,
+                    "forInPrefixMatchesObjectKeys": True,
+                    "forInInheritedTail": [
+                        "TEMPORARY",
+                        "PERSISTENT",
+                        "addEventListener",
+                        "dispatchEvent",
+                        "removeEventListener",
+                        "when",
+                    ],
+                },
+            )
+
+    def test_css_style_instance_uses_chrome150_property_manifest(self) -> None:
+        with yatouv8.Runtime() as runtime:
+            observed = runtime.eval(
+                """
+                (() => {
+                    const style = document.createElement("div").style;
+                    const keys = Reflect.ownKeys(style).map(String);
+                    const enumerable = Object.keys(style);
+                    const accent = Object.getOwnPropertyDescriptor(style, "accentColor");
+                    return {
+                        keyCount: keys.length,
+                        enumerableCount: enumerable.length,
+                        first: keys.slice(0, 3),
+                        last: keys.slice(-3),
+                        hiddenState: keys.filter(key => key.startsWith("_")),
+                        accent: {
+                            value: accent.value,
+                            writable: accent.writable,
+                            enumerable: accent.enumerable,
+                            configurable: accent.configurable,
+                        },
+                    };
+                })()
+                """
+            )
+
+        self.assertEqual(observed["keyCount"], 744)
+        self.assertEqual(observed["enumerableCount"], 735)
+        self.assertEqual(observed["first"], ["accentColor", "additiveSymbols", "alignContent"])
+        self.assertEqual(observed["last"], ["y", "zIndex", "zoom"])
+        self.assertEqual(observed["hiddenState"], [])
+        self.assertEqual(
+            observed["accent"],
+            {"value": "", "writable": True, "enumerable": True, "configurable": True},
+        )
+
+    def test_window_surface_uses_chrome150_native_order_and_brands(self) -> None:
+        with yatouv8.Runtime() as runtime:
+            observed = runtime.eval(
+                """
+                (() => ({
+                    ownKeySlice: Reflect.ownKeys(window).slice(57, 75).map(String),
+                    persistent: Window.prototype.PERSISTENT,
+                    fetchTag: Object.prototype.toString.call(fetch),
+                    cssTag: Object.prototype.toString.call(CSS),
+                    gpuTags: [
+                        GPUBufferUsage,
+                        GPUColorWrite,
+                        GPUMapMode,
+                        GPUShaderStage,
+                        GPUTextureUsage,
+                    ].map(value => Object.prototype.toString.call(value)),
+                }))()
+                """
+            )
+
+        self.assertEqual(
+            observed["ownKeySlice"],
+            [
+                "eval",
+                "isFinite",
+                "isNaN",
+                "console",
+                "Option",
+                "Image",
+                "Audio",
+                "webkitURL",
+                "webkitRTCPeerConnection",
+                "webkitMediaStream",
+                "WebKitMutationObserver",
+                "WebKitCSSMatrix",
+                "XPathResult",
+                "XPathExpression",
+                "XPathEvaluator",
+                "XMLSerializer",
+                "XMLHttpRequestUpload",
+                "XMLHttpRequestEventTarget",
+            ],
+        )
+        self.assertEqual(observed["persistent"], 1)
+        self.assertEqual(observed["fetchTag"], "[object Function]")
+        self.assertEqual(observed["cssTag"], "[object CSS]")
+        self.assertEqual(
+            observed["gpuTags"],
+            [
+                "[object GPUBufferUsage]",
+                "[object GPUColorWrite]",
+                "[object GPUMapMode]",
+                "[object GPUShaderStage]",
+                "[object GPUTextureUsage]",
+            ],
+        )
 
     def test_trace_names_intrinsic_namespaces_instead_of_object_prototype(self) -> None:
         config = yatouv8.RuntimeConfig(

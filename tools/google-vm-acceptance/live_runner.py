@@ -17,10 +17,27 @@ from typing import Any, Iterable
 from urllib.parse import parse_qsl, urlsplit
 
 
-WINDOWS_CHROME_150_UA = (
-    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
-    "(KHTML, like Gecko) Chrome/150.0.0.0 Safari/537.36"
-)
+DEFAULT_CHROME_MAJOR = 146
+
+
+def windows_chrome_user_agent(major: int) -> str:
+    """Return the UA paired with one curl_cffi Chrome impersonation profile."""
+
+    return (
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
+        f"(KHTML, like Gecko) Chrome/{major}.0.0.0 Safari/537.36"
+    )
+
+
+def chrome_major_from_impersonate(impersonate: str) -> int:
+    """Extract the observable Chrome major from a curl_cffi profile name."""
+
+    match = re.fullmatch(r"chrome(\d+)", impersonate.strip().lower())
+    if match is None:
+        raise ValueError(
+            "--impersonate must name an explicit desktop Chrome profile, e.g. chrome146"
+        )
+    return int(match.group(1))
 
 
 def inline_scripts(html: str) -> list[str]:
@@ -29,8 +46,12 @@ def inline_scripts(html: str) -> list[str]:
     return re.findall(r"<script[^>]*>(.*?)</script>", html, re.DOTALL | re.IGNORECASE)
 
 
-def browser_headers(*, referer: str | None = None) -> dict[str, str]:
-    """Return one coherent Windows/Chrome 150 navigation header set."""
+def browser_headers(
+    *,
+    chrome_major: int = DEFAULT_CHROME_MAJOR,
+    referer: str | None = None,
+) -> dict[str, str]:
+    """Return headers coherent with the selected curl_cffi Chrome profile."""
 
     headers = {
         "accept": (
@@ -41,7 +62,10 @@ def browser_headers(*, referer: str | None = None) -> dict[str, str]:
         "accept-language": "zh-CN,zh;q=0.9",
         "cache-control": "max-age=0",
         "priority": "u=0, i",
-        "sec-ch-ua": '"Not_A Brand";v="99", "Chromium";v="150", "Google Chrome";v="150"',
+        "sec-ch-ua": (
+            f'"Not_A Brand";v="99", "Chromium";v="{chrome_major}", '
+            f'"Google Chrome";v="{chrome_major}"'
+        ),
         "sec-ch-ua-mobile": "?0",
         "sec-ch-ua-platform": '"Windows"',
         "sec-fetch-dest": "document",
@@ -49,7 +73,7 @@ def browser_headers(*, referer: str | None = None) -> dict[str, str]:
         "sec-fetch-site": "same-origin" if referer else "none",
         "sec-fetch-user": "?1",
         "upgrade-insecure-requests": "1",
-        "user-agent": WINDOWS_CHROME_150_UA,
+        "user-agent": windows_chrome_user_agent(chrome_major),
     }
     if referer:
         headers["referer"] = referer
@@ -202,6 +226,7 @@ def execute_challenge(
     cookies: Any,
     *,
     navigation_start_ms: float,
+    chrome_major: int = DEFAULT_CHROME_MAJOR,
 ) -> dict[str, Any]:
     """Execute the first four inline scripts with a request-coupled clock."""
 
@@ -214,7 +239,9 @@ def execute_challenge(
     config = yatouv8.RuntimeConfig.from_curl_response(
         response,
         navigation_start_ms=navigation_start_ms,
-        profile=yatouv8.BrowserProfile(user_agent=WINDOWS_CHROME_150_UA),
+        profile=yatouv8.BrowserProfile(
+            user_agent=windows_chrome_user_agent(chrome_major)
+        ),
         get_trace=yatouv8.GetTraceConfig(enabled=False),
         execution_trace=yatouv8.ExecutionTraceConfig(enabled=False),
     )
@@ -279,25 +306,31 @@ def run_attempt(
         CurlInfo.HEADER_SIZE,
     ]
     origin = urlsplit(target)
+    chrome_major = chrome_major_from_impersonate(impersonate)
     home_url = f"{origin.scheme}://{origin.netloc}/"
     proxies = {"http": proxy, "https": proxy} if proxy else None
     started_ms = time.time_ns() / 1_000_000
     with Session(impersonate=impersonate, curl_infos=infos, proxies=proxies) as session:
         home = session.get(
             home_url,
-            headers=browser_headers(),
+            headers=browser_headers(chrome_major=chrome_major),
             timeout=timeout,
             allow_redirects=True,
         )
         request_start_ms = time.time_ns() / 1_000_000
         first = session.get(
             target,
-            headers=browser_headers(referer=str(home.url)),
+            headers=browser_headers(chrome_major=chrome_major, referer=str(home.url)),
             timeout=timeout,
             allow_redirects=True,
         )
         first_markers = response_markers(first)
-        vm = execute_challenge(first, session.cookies, navigation_start_ms=request_start_ms)
+        vm = execute_challenge(
+            first,
+            session.cookies,
+            navigation_start_ms=request_start_ms,
+            chrome_major=chrome_major,
+        )
         token = vm.pop("sg_ss")
         navigation = vm.get("navigation")
         if token is not None:
@@ -309,7 +342,10 @@ def run_attempt(
         if isinstance(navigation, dict) and isinstance(navigation.get("url"), str):
             second = session.get(
                 navigation["url"],
-                headers=browser_headers(referer=str(first.url)),
+                headers=browser_headers(
+                    chrome_major=chrome_major,
+                    referer=str(first.url),
+                ),
                 timeout=timeout,
                 allow_redirects=True,
             )
@@ -387,7 +423,8 @@ def main() -> int:
         "target": arguments.url,
         "proxy": arguments.proxy,
         "network_profile": (
-            f"curl_cffi {arguments.impersonate} TLS + explicit Windows Chrome 150 headers"
+            f"curl_cffi {arguments.impersonate} TLS + matching Windows Chrome "
+            f"{chrome_major_from_impersonate(arguments.impersonate)} headers/runtime"
         ),
         "diagnostics": {"get_trace_enabled": False, "execution_trace_enabled": False},
         "accepted": any(attempt.get("accepted") for attempt in attempts),

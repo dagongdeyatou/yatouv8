@@ -5,6 +5,7 @@ from __future__ import annotations
 from dataclasses import asdict, dataclass, field, replace
 import json
 import math
+import time
 from typing import Any, Mapping
 
 from ._native import Runtime as _NativeRuntime
@@ -48,7 +49,7 @@ class BrowserProfile:
     )
     platform: str = "Win32"
     language: str = "zh-CN"
-    languages: list[str] = field(default_factory=lambda: ["zh-CN", "zh"])
+    languages: list[str] = field(default_factory=lambda: ["zh-CN"])
     hardware_concurrency: int = 12
     screen_width: int = 1920
     screen_height: int = 1080
@@ -185,17 +186,24 @@ class HttpNavigationTiming:
     def navigation_profile(self) -> dict[str, int | None]:
         """Return legacy PerformanceTiming offsets valid during inline parsing."""
 
-        lookup = self._legacy_ms(self.name_lookup_ms)
-        connect = self._legacy_ms(self.connect_ms)
-        app_connect = self._legacy_ms(self.app_connect_ms)
-        pretransfer = self._legacy_ms(self.pretransfer_ms)
-        response_start = self._legacy_ms(self.response_start_ms)
-        response_end = self._legacy_ms(self.response_end_ms)
+        # curl reports zero DNS/connect/pretransfer values when the homepage
+        # warm-up connection is reused.  A browser's top-level navigation
+        # entry still exposes a small positive fetch/network phase; literal
+        # zeroes are both semantically different and make BotGuard skip two
+        # timing probes.  Preserve causal ordering while applying Chrome's
+        # minimum observable millisecond bucket.
+        phase_floor = 1
+        lookup = max(phase_floor, self._legacy_ms(self.name_lookup_ms))
+        connect = max(lookup, self._legacy_ms(self.connect_ms))
+        app_connect = max(connect, self._legacy_ms(self.app_connect_ms))
+        pretransfer = max(app_connect, self._legacy_ms(self.pretransfer_ms))
+        response_start = max(pretransfer, self._legacy_ms(self.response_start_ms))
+        response_end = max(response_start, self._legacy_ms(self.response_end_ms))
         return {
             "connect_start": lookup,
             "secure_connection_start": connect if app_connect > connect else None,
             "unload_event_end": None,
-            "domain_lookup_start": 0,
+            "domain_lookup_start": lookup,
             "domain_lookup_end": lookup,
             "response_start": response_start,
             "connect_end": app_connect,
@@ -210,7 +218,7 @@ class HttpNavigationTiming:
             "unload_event_start": None,
             "redirect_end": None,
             "dom_interactive": None,
-            "fetch_start": 0,
+            "fetch_start": lookup,
             "dom_content_loaded_event_start": None,
         }
 
@@ -221,6 +229,10 @@ class HttpNavigationTiming:
             "mode": "system_monotonic",
             "start_ms": self.response_end_ms,
             "quantum_ms": quantum_ms,
+            # Chrome computes DOMHighResTimeStamp values from a large platform
+            # monotonic reading before subtracting the navigation origin.  The
+            # absolute sample preserves the same observable floating-point grid.
+            "precision_anchor_ms": time.monotonic() * 1_000.0,
         }
 
     @staticmethod
@@ -309,8 +321,10 @@ class RuntimeConfig:
             clock=timing.clock_profile(quantum_ms=clock_quantum_ms),
         )
         runtime_options.setdefault("url", str(response.url))
-        runtime_options.setdefault("viewport_width", 1280)
-        runtime_options.setdefault("viewport_height", 633)
+        # Chrome-for-Testing 150 on the target Windows 11 window profile
+        # exposes 16 px of horizontal frame and 152 px of browser chrome.
+        runtime_options.setdefault("viewport_width", 1264)
+        runtime_options.setdefault("viewport_height", 568)
         runtime_options.setdefault("time_origin_ms", navigation_start_ms)
         return cls(profile=coupled_profile, **runtime_options)
 
