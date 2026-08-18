@@ -18,6 +18,8 @@ import subprocess
 import sys
 import tarfile
 import tempfile
+import time
+import urllib.error
 import urllib.request
 from typing import Any, BinaryIO
 
@@ -67,10 +69,39 @@ RUN_RUSTFMT_EXEC_ORIGINAL = (
 RUN_RUSTFMT_EXEC_PATCHED = """subprocess.check_call([
           os.environ.get(\"YATOU_RUSTFMT_EXE\", args.rustfmt_exe), *fmtargs
       ])"""
+DOWNLOAD_RETRY_DELAYS_SECONDS = (2, 4, 8, 16, 30)
+RETRYABLE_HTTP_STATUS = frozenset({408, 429, 500, 502, 503, 504})
 
 
 class PreparationError(RuntimeError):
     """Raised when a pinned V8 source input cannot be verified."""
+
+
+def _urlopen_with_retry(request: urllib.request.Request, *, timeout: int) -> Any:
+    """Open one pinned build asset with bounded transient-error retries."""
+
+    attempts = len(DOWNLOAD_RETRY_DELAYS_SECONDS) + 1
+    for attempt in range(attempts):
+        try:
+            return urllib.request.urlopen(request, timeout=timeout)
+        except urllib.error.HTTPError as error:
+            if error.code not in RETRYABLE_HTTP_STATUS or attempt + 1 == attempts:
+                raise
+            delay = DOWNLOAD_RETRY_DELAYS_SECONDS[attempt]
+            reason = str(error)
+        except (urllib.error.URLError, TimeoutError, ConnectionError) as error:
+            if attempt + 1 == attempts:
+                raise
+            delay = DOWNLOAD_RETRY_DELAYS_SECONDS[attempt]
+            reason = str(error)
+        print(
+            f"prepare-v8-source: transient download failure "
+            f"({attempt + 1}/{attempts}) for {request.full_url}: {reason}; "
+            f"retrying in {delay}s",
+            file=sys.stderr,
+        )
+        time.sleep(delay)
+    raise AssertionError("unreachable download retry state")
 
 
 def sha256_file(path: pathlib.Path) -> str:
@@ -113,7 +144,7 @@ def _download(
     temporary = destination.with_name(f".{destination.name}.{os.getpid()}.tmp")
     try:
         request = urllib.request.Request(url, headers={"User-Agent": "yatouv8-build/0.1"})
-        with urllib.request.urlopen(request, timeout=900) as response, temporary.open("wb") as sink:
+        with _urlopen_with_retry(request, timeout=900) as response, temporary.open("wb") as sink:
             shutil.copyfileobj(response, sink, length=1024 * 1024)
         actual = archive_tree_sha256(temporary)
         if actual != expected_tree_sha256:
@@ -129,7 +160,7 @@ def _download(
 
 def _read_url(url: str) -> bytes:
     request = urllib.request.Request(url, headers={"User-Agent": "yatouv8-build/0.1"})
-    with urllib.request.urlopen(request, timeout=300) as response:
+    with _urlopen_with_retry(request, timeout=300) as response:
         return response.read()
 
 

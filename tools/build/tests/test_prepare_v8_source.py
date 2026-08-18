@@ -8,6 +8,7 @@ import pathlib
 import tarfile
 import tempfile
 import unittest
+import urllib.error
 
 
 MODULE_PATH = pathlib.Path(__file__).parents[1] / "prepare_v8_source.py"
@@ -98,6 +99,70 @@ class PrepareV8SourceTests(unittest.TestCase):
                 prepare_v8_source.archive_tree_sha256(first),
                 prepare_v8_source.archive_tree_sha256(second),
             )
+
+    def test_read_url_retries_transient_http_failures(self) -> None:
+        class Response:
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *_args):
+                return False
+
+            @staticmethod
+            def read() -> bytes:
+                return b"verified payload"
+
+        original_urlopen = prepare_v8_source.urllib.request.urlopen
+        original_sleep = prepare_v8_source.time.sleep
+        calls = 0
+        sleeps: list[int] = []
+
+        def urlopen(request, *, timeout):
+            nonlocal calls
+            calls += 1
+            self.assertEqual(timeout, 300)
+            if calls < 3:
+                raise urllib.error.HTTPError(
+                    request.full_url, 503, "unavailable", {}, None
+                )
+            return Response()
+
+        try:
+            prepare_v8_source.urllib.request.urlopen = urlopen
+            prepare_v8_source.time.sleep = sleeps.append
+            self.assertEqual(
+                prepare_v8_source._read_url("https://fixture.invalid/icu"),
+                b"verified payload",
+            )
+        finally:
+            prepare_v8_source.urllib.request.urlopen = original_urlopen
+            prepare_v8_source.time.sleep = original_sleep
+
+        self.assertEqual(calls, 3)
+        self.assertEqual(sleeps, [2, 4])
+
+    def test_read_url_does_not_retry_permanent_http_failure(self) -> None:
+        original_urlopen = prepare_v8_source.urllib.request.urlopen
+        original_sleep = prepare_v8_source.time.sleep
+        calls = 0
+        sleeps: list[int] = []
+
+        def urlopen(request, *, timeout):
+            nonlocal calls
+            calls += 1
+            raise urllib.error.HTTPError(request.full_url, 404, "missing", {}, None)
+
+        try:
+            prepare_v8_source.urllib.request.urlopen = urlopen
+            prepare_v8_source.time.sleep = sleeps.append
+            with self.assertRaises(urllib.error.HTTPError):
+                prepare_v8_source._read_url("https://fixture.invalid/missing")
+        finally:
+            prepare_v8_source.urllib.request.urlopen = original_urlopen
+            prepare_v8_source.time.sleep = original_sleep
+
+        self.assertEqual(calls, 1)
+        self.assertEqual(sleeps, [])
 
     def test_patch_run_bindgen_preserves_inherited_library_path(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
