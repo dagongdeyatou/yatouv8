@@ -13,6 +13,41 @@ import yatouv8
 
 
 class RuntimeTests(unittest.TestCase):
+    def test_chrome151_windows_persona_and_configurable_performance_memory(self) -> None:
+        profile = yatouv8.BrowserProfile.chrome151_windows11(
+            device_memory=8,
+            network_rtt_ms=75,
+            network_downlink_mbps=12.5,
+            total_js_heap_size=12_000_000,
+            used_js_heap_size=7_000_000,
+            js_heap_size_limit=4_294_967_296,
+        )
+        with yatouv8.Runtime(yatouv8.RuntimeConfig(profile=profile)) as runtime:
+            result = runtime.eval(
+                "({ua:navigator.userAgent,platform:navigator.platform,"
+                "languages:Array.from(navigator.languages),"
+                "deviceMemory:navigator.deviceMemory,"
+                "network:[navigator.connection.effectiveType,"
+                "navigator.connection.rtt,navigator.connection.downlink],"
+                "memory:[performance.memory.totalJSHeapSize,"
+                "performance.memory.usedJSHeapSize,"
+                "performance.memory.jsHeapSizeLimit]})"
+            )
+
+        self.assertIn("Chrome/151.", result["ua"])
+        self.assertEqual(result["platform"], "Win32")
+        self.assertEqual(result["languages"], ["zh-CN", "zh"])
+        self.assertEqual(result["deviceMemory"], 8)
+        self.assertEqual(result["network"], ["4g", 75, 12.5])
+        self.assertEqual(result["memory"], [12_000_000, 7_000_000, 4_294_967_296])
+
+        with self.assertRaises(ValueError):
+            yatouv8.BrowserProfile(
+                total_js_heap_size=1_000,
+                used_js_heap_size=2_000,
+                js_heap_size_limit=3_000,
+            )
+
     def test_cookiejar_precedes_mapping_for_duplicate_cookie_names(self) -> None:
         class Cookie:
             def __init__(self, domain: str) -> None:

@@ -1967,10 +1967,10 @@
   const deprecatedStorageQuota = ObjectIntrinsic.create(deprecatedStorageQuotaPrototype);
   const connection = ObjectIntrinsic.create(NetworkInformation.prototype);
   networkInformationState.set(connection, {
-    effectiveType: "4g",
-    rtt: 100,
-    downlink: 1.45,
-    saveData: false,
+    effectiveType: profile.network_effective_type,
+    rtt: profile.network_rtt_ms,
+    downlink: profile.network_downlink_mbps,
+    saveData: profile.network_save_data,
     onchange: null
   });
   listenersFor(connection);
@@ -2087,9 +2087,9 @@
   performanceNavigationState.set(performanceNavigation, { type: 0, redirectCount: 0 });
   const performanceMemory = ObjectIntrinsic.create(MemoryInfoPrototype);
   memoryInfoState.set(performanceMemory, {
-    totalJSHeapSize: 9_571_525,
-    usedJSHeapSize: 5_642_245,
-    jsHeapSizeLimit: 4_395_630_592
+    totalJSHeapSize: profile.total_js_heap_size,
+    usedJSHeapSize: profile.used_js_heap_size,
+    jsHeapSizeLimit: profile.js_heap_size_limit
   });
   const performanceNavigationEntry = {};
   const performanceEntries = [performanceNavigationEntry];
@@ -2392,7 +2392,9 @@
         userAgent: profile.user_agent, appVersion: profile.user_agent.replace(/^Mozilla\//, ""),
         appCodeName: "Mozilla", appName: "Netscape", platform: profile.platform,
         language: profile.language, languages: ObjectIntrinsic.freeze(profile.languages.slice()),
-        hardwareConcurrency: profile.hardware_concurrency, deviceMemory: 32, maxTouchPoints: 0,
+        hardwareConcurrency: profile.hardware_concurrency,
+        deviceMemory: profile.device_memory,
+        maxTouchPoints: 0,
         webdriver: false, cookieEnabled: true, onLine: true, product: "Gecko",
         productSub: "20030107", vendor: "Google Inc.", vendorSub: "", pdfViewerEnabled: true
       };

@@ -230,6 +230,30 @@ pub struct BrowserProfile {
     /// Top-level browser window height in CSS pixels.
     #[serde(default = "default_outer_height")]
     pub outer_height: u32,
+    /// Coarsened `navigator.deviceMemory` value in GiB.
+    #[serde(default = "default_device_memory")]
+    pub device_memory: f64,
+    /// Effective connection type exposed by NetworkInformation.
+    #[serde(default = "default_network_effective_type")]
+    pub network_effective_type: String,
+    /// Rounded network RTT in milliseconds.
+    #[serde(default = "default_network_rtt_ms")]
+    pub network_rtt_ms: u32,
+    /// Rounded network downlink in megabits per second.
+    #[serde(default = "default_network_downlink_mbps")]
+    pub network_downlink_mbps: f64,
+    /// NetworkInformation data-saver state.
+    #[serde(default)]
+    pub network_save_data: bool,
+    /// Configurable `performance.memory.totalJSHeapSize`.
+    #[serde(default = "default_total_js_heap_size")]
+    pub total_js_heap_size: u64,
+    /// Configurable `performance.memory.usedJSHeapSize`.
+    #[serde(default = "default_used_js_heap_size")]
+    pub used_js_heap_size: u64,
+    /// Configurable `performance.memory.jsHeapSizeLimit`.
+    #[serde(default = "default_js_heap_size_limit")]
+    pub js_heap_size_limit: u64,
     /// Evidence-derived relative values for the legacy `PerformanceTiming` object.
     #[serde(default)]
     pub navigation_timing: NavigationTimingProfile,
@@ -257,6 +281,14 @@ impl Default for BrowserProfile {
             screen_depth: 24,
             outer_width: default_outer_width(),
             outer_height: default_outer_height(),
+            device_memory: default_device_memory(),
+            network_effective_type: default_network_effective_type(),
+            network_rtt_ms: default_network_rtt_ms(),
+            network_downlink_mbps: default_network_downlink_mbps(),
+            network_save_data: false,
+            total_js_heap_size: default_total_js_heap_size(),
+            used_js_heap_size: default_used_js_heap_size(),
+            js_heap_size_limit: default_js_heap_size_limit(),
             navigation_timing: NavigationTimingProfile::default(),
             navigation_entry: NavigationEntryProfile::default(),
             clock: ClockMode::Recorded {
@@ -274,6 +306,34 @@ const fn default_outer_width() -> u32 {
 
 const fn default_outer_height() -> u32 {
     720
+}
+
+const fn default_device_memory() -> f64 {
+    32.0
+}
+
+fn default_network_effective_type() -> String {
+    "4g".to_owned()
+}
+
+const fn default_network_rtt_ms() -> u32 {
+    100
+}
+
+const fn default_network_downlink_mbps() -> f64 {
+    1.45
+}
+
+const fn default_total_js_heap_size() -> u64 {
+    9_571_525
+}
+
+const fn default_used_js_heap_size() -> u64 {
+    5_642_245
+}
+
+const fn default_js_heap_size_limit() -> u64 {
+    4_395_630_592
 }
 
 fn default_chrome_clock_buckets() -> Vec<ClockBucket> {
@@ -1357,6 +1417,34 @@ impl RuntimeConfig {
         if self.profile.outer_width == 0 || self.profile.outer_height == 0 {
             return Err(RuntimeError::Configuration(
                 "outer window dimensions must be positive".to_owned(),
+            ));
+        }
+        if !self.profile.device_memory.is_finite() || self.profile.device_memory <= 0.0 {
+            return Err(RuntimeError::Configuration(
+                "profile.device_memory must be finite and positive".to_owned(),
+            ));
+        }
+        if !matches!(
+            self.profile.network_effective_type.as_str(),
+            "slow-2g" | "2g" | "3g" | "4g"
+        ) {
+            return Err(RuntimeError::Configuration(
+                "profile.network_effective_type is invalid".to_owned(),
+            ));
+        }
+        if !self.profile.network_downlink_mbps.is_finite()
+            || self.profile.network_downlink_mbps < 0.0
+        {
+            return Err(RuntimeError::Configuration(
+                "profile.network_downlink_mbps must be finite and non-negative".to_owned(),
+            ));
+        }
+        if self.profile.used_js_heap_size == 0
+            || self.profile.used_js_heap_size > self.profile.total_js_heap_size
+            || self.profile.total_js_heap_size > self.profile.js_heap_size_limit
+        {
+            return Err(RuntimeError::Configuration(
+                "profile heap sizes must satisfy 0 < used <= total <= limit".to_owned(),
             ));
         }
         if !self.device_scale_factor.is_finite() || self.device_scale_factor <= 0.0 {

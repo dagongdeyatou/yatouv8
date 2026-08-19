@@ -41,7 +41,7 @@ class ChallengeResult:
 
 @dataclass(slots=True)
 class BrowserProfile:
-    """Chrome 150 identity plus replayed or request-coupled timing."""
+    """Coherent browser identity plus replayed or request-coupled timing."""
 
     user_agent: str = (
         "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
@@ -58,6 +58,14 @@ class BrowserProfile:
     screen_depth: int = 24
     outer_width: int = 1280
     outer_height: int = 720
+    device_memory: float = 32.0
+    network_effective_type: str = "4g"
+    network_rtt_ms: int = 100
+    network_downlink_mbps: float = 1.45
+    network_save_data: bool = False
+    total_js_heap_size: int = 9_571_525
+    used_js_heap_size: int = 5_642_245
+    js_heap_size_limit: int = 4_395_630_592
     navigation_timing: dict[str, int | None] = field(default_factory=lambda: {
         "connect_start": 3,
         "secure_connection_start": None,
@@ -116,6 +124,45 @@ class BrowserProfile:
         "fallback_repeats": 24,
     })
 
+    def __post_init__(self) -> None:
+        if not math.isfinite(self.device_memory) or self.device_memory <= 0:
+            raise ValueError("device_memory must be positive and finite")
+        if self.network_effective_type not in {"slow-2g", "2g", "3g", "4g"}:
+            raise ValueError("network_effective_type is invalid")
+        if self.network_rtt_ms < 0:
+            raise ValueError("network_rtt_ms must be non-negative")
+        if (
+            not math.isfinite(self.network_downlink_mbps)
+            or self.network_downlink_mbps < 0
+        ):
+            raise ValueError("network_downlink_mbps must be finite and non-negative")
+        if not (
+            0
+            < self.used_js_heap_size
+            <= self.total_js_heap_size
+            <= self.js_heap_size_limit
+        ):
+            raise ValueError(
+                "heap sizes must satisfy 0 < used_js_heap_size "
+                "<= total_js_heap_size <= js_heap_size_limit"
+            )
+
+    @classmethod
+    def chrome151_windows11(cls, **overrides: Any) -> "BrowserProfile":
+        """Return a coherent Chrome 151 Windows 11 identity preset."""
+
+        values: dict[str, Any] = {
+            "user_agent": (
+                "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+                "AppleWebKit/537.36 (KHTML, like Gecko) "
+                "Chrome/151.0.0.0 Safari/537.36"
+            ),
+            "platform": "Win32",
+            "language": "zh-CN",
+            "languages": ["zh-CN", "zh"],
+        }
+        values.update(overrides)
+        return cls(**values)
 
 @dataclass(frozen=True, slots=True)
 class HttpNavigationTiming:
